@@ -82,7 +82,7 @@ postprocess_to_groups = None
 '''
 
 # Get a (new) run dir
-io_helper.get_run_dir(run_base_dir=class_base_dir,
+class_dir = io_helper.get_run_dir(run_base_dir=class_base_dir,
                       reuse_last_run_dir=False)
 
 log_dir = os.path.join(class_base_dir, 'log')
