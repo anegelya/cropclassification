@@ -8,7 +8,7 @@ Create an input file for the sentinel timeseries processing.
 import logging
 import os
 import geopandas as gpd
-import global_settings as gs
+import cropclassification.helpers.config_helper as conf
 
 #-------------------------------------------------------------
 # First define/init some general variables/constants
@@ -60,38 +60,39 @@ def prepare_input(input_parcel_filepath: str,
     logger.info(f'Parceldata read, shape: {gdf_parceldata.shape}')
 
     # Check if the id column is present...
-    if gs.id_column not in gdf_parceldata.columns:
-        message = f"STOP: Column {gs.id_column} not found in input parcel file: {input_parcel_filepath}. Make sure the column is present or change the column name in global_constants.py"
+    if conf.columns['id'] not in gdf_parceldata.columns:
+        message = f"STOP: Column {conf.columns['id']} not found in input parcel file: {input_parcel_filepath}. Make sure the column is present or change the column name in global_constants.py"
         logger.critical(message)
         raise Exception(message)
 
     logger.info('Apply buffer on parcel')
     parceldata_buf = gdf_parceldata.copy()
+
     # resolution = number of segments per circle
-    parceldata_buf['geometry'] = parceldata_buf['geometry'].buffer(-10, resolution=5)
+    parceldata_buf[conf.columns['geom']] = parceldata_buf[conf.columns['geom']].buffer(-conf.marker.getint('buffer'), resolution=5)
 
     # Export buffered geometries that result in empty geometries
     logger.info('Export parcel that are empty after buffer')
-    parceldata_buf_empty = parceldata_buf[parceldata_buf['geometry'].is_empty == True]
+    parceldata_buf_empty = parceldata_buf[parceldata_buf[conf.columns['geom']].is_empty == True]
     parceldata_buf_empty.to_csv(temp_empty_filepath, index=False)
 
     # Export buffered geometries that don't result in polygons
     logger.info('Export parcel that are no (multi)polygons after buffer')
-    parceldata_buf_notempty = parceldata_buf[parceldata_buf['geometry'].is_empty == False]
-    parceldata_buf_nopoly = parceldata_buf_notempty[-parceldata_buf_notempty['geometry']
+    parceldata_buf_notempty = parceldata_buf[parceldata_buf[conf.columns['geom']].is_empty == False]
+    parceldata_buf_nopoly = parceldata_buf_notempty[-parceldata_buf_notempty[conf.columns['geom']]
                                                     .geom_type.isin(['Polygon', 'MultiPolygon'])]
     parceldata_buf_nopoly.to_csv(temp_nopoly_filepath, index=False)
 
     # Continue processing on the (multi)polygons
     logger.info('Export parcel that are (multi)polygons after buffer')
-    parceldata_buf_poly = parceldata_buf_notempty[parceldata_buf_notempty['geometry']
+    parceldata_buf_poly = parceldata_buf_notempty[parceldata_buf_notempty[conf.columns['geom']]
                                                   .geom_type.isin(['Polygon', 'MultiPolygon'])]
 
     # Removeall columns except ID
     for column in parceldata_buf_poly.columns:
-        if column not in [gs.id_column, 'geometry']:
+        if column not in [conf.columns['id'], conf.columns['geom']]:
             parceldata_buf_poly.drop(column, axis=1, inplace=True)
-    logger.debug(f'parcel that are (multi)polygons, shape: {parceldata_buf_poly.shape}')
+    logger.debug(f"parcel that are (multi)polygons, shape: {parceldata_buf_poly.shape}")
     parceldata_buf_poly.to_file(output_imagedata_parcel_input_filepath)
 
     # If the needed to be created... it didn't exist yet and so it needs to be uploaded manually
