@@ -98,6 +98,9 @@ def predict_proba(df_input_parcel: pd.DataFrame,
     cols = [gs.id_column, gs.class_column]
     cols.extend(classifier.classes_)
     df_proba = pd.DataFrame(id_class_proba, columns=cols)
+    # write temp csv # take care the file is overwriten or use 
+    logger.info("Write temp prediction data to file")
+    df_proba.to_csv("x:\\Monitoring\\Markers\\PlayGround\\JanAnt\\temp\\temp_output_predictions"+".csv", float_format='%.10f', encoding='utf-8')
 
     return df_proba
 

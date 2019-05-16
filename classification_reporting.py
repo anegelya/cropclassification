@@ -282,7 +282,7 @@ def write_full_report(parcel_predictions_csv: str,
             count_per_class.insert(loc=1, column='pct', value=values)
             with pd.option_context('display.max_rows', None, 'display.max_columns', None):
                 outputfile.write(f"{count_per_class}\n")
-				logger.info(f"{count_per_class}\n")
+                logger.info(f"{count_per_class}\n") 
                 html_data['PREDICTION_QUALITY_OVERVIEW_TABLE'] = count_per_class.to_html()
 
             # Now write the result for the consolidated predictions
@@ -296,7 +296,7 @@ def write_full_report(parcel_predictions_csv: str,
             count_per_class.insert(loc=1, column='pct', value=values)
             with pd.option_context('display.max_rows', None, 'display.max_columns', None):                                
                 outputfile.write(f"{count_per_class}\n")
-				logger.info(f"{count_per_class}\n")
+                logger.info(f"{count_per_class}\n")
                 html_data['PREDICTION_QUALITY_CONS_OVERVIEW_TABLE'] = count_per_class.to_html()
 
             # If the pixcount is available, write the number of ALFA errors per pixcount
@@ -310,7 +310,7 @@ def write_full_report(parcel_predictions_csv: str,
                 df_per_pixcount.dropna(inplace=True, how='all') # de eerste 10 records worden normaal weg gefilterd, omdat daar geen data voor is vanwege de negatieve 10m buffer
                 with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):                    
                     outputfile.write(f"{df_per_pixcount}\n")
-					logger.info(f"{df_per_pixcount}\n")
+                    logger.info(f"{df_per_pixcount}\n")
                     html_data['PREDICTION_QUALITY_ALPHA_ERROR_TABLE'] = df_per_pixcount.to_html()
                         
     with open(output_report_txt.replace(".txt", ".html"), 'w') as outputfile:           

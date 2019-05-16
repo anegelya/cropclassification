@@ -55,21 +55,21 @@ class_base_dir = os.path.join(base_dir, f"{year}_class_maincrops7")    # Dir for
 balancing_strategy = class_pre.BALANCING_STRATEGY_MEDIUM
 postprocess_to_groups = None
 '''
-'''
+#'''
 # Settings for monitoring landcover
 classtype_to_prepare = 'MONITORING_LANDCOVER'
 class_base_dir = os.path.join(base_dir, f"{year}_class_landcover_mon") # Dir for the classification type
 balancing_strategy = class_pre.BALANCING_STRATEGY_MEDIUM
 postprocess_to_groups = None
-'''
 #'''
+'''
 # Settings for monitoring crop groups
 classtype_to_prepare = 'MONITORING_CROPGROUPS'
 class_base_dir = os.path.join(base_dir, f"{year}_class_maincrops_mon") # Dir for the classification type
 balancing_strategy = class_pre.BALANCING_STRATEGY_MEDIUM
 postprocess_to_groups = None
 # manueel aanpassen bij 
-#'''
+'''
 '''
 # Settings for monitoring landcover via crop groups
 #classtype_to_prepare = 'MONITORING_CROPGROUPS'
@@ -191,7 +191,6 @@ ts_calc_gee.calc_timeseries_data(input_parcel_filepath=input_parcel_filepath_gee
 #                      - if the classname starts with 'IGNORE_', the parcel will be ignored
 #           - pixcount (=global_settings.pixcount_s1s2_column): the number of S1/S2 pixels in the
 #             parcel. Is -1 if the parcel doesn't have any S1/S2 data.
-# Write output1 to x:\Monitoring\Markers\PlayGround\JanAnt\2018_class_landcover_mon\Run_012\Prc_BEFL_2018_2018-08-02_parcel.csv
 parcel_csv = os.path.join(class_dir, f"{input_parcel_filename_noext}_parcel.csv")
 parcel_pixcount_csv = os.path.join(imagedata_dir, f"{base_filename}_pixcount.csv")
 class_pre.prepare_input(input_parcel_filepath=input_parcel_filepath,
@@ -200,9 +199,7 @@ class_pre.prepare_input(input_parcel_filepath=input_parcel_filepath,
                         output_parcel_filepath=parcel_csv,
                         input_classtype_to_prepare=classtype_to_prepare)
 
-# Combine all data needed to do the classification in one input file 
-#Write output2 BEFL2018_bufm10_weekly_parcel_classdata.csv_rowsWithEmptyData.csv
-#Write output3 BEFL2018_bufm10_weekly_parcel_classdata.csv                       file of + 900MB , thus takes time!
+# Combine all data needed to do the classification in one input file
 parcel_classification_data_csv = os.path.join(class_dir, f"{base_filename}_parcel_classdata.csv")
 ts.collect_and_prepare_timeseries_data(imagedata_dir=imagedata_dir,
                                        base_filename=base_filename,
@@ -217,9 +214,6 @@ ts.collect_and_prepare_timeseries_data(imagedata_dir=imagedata_dir,
 #-------------------------------------------------------------
 # Create the training sample...
 # Remark: this creates a list of representative test parcel + a list of (candidate) training parcel
-## Writes output 4 BEFL2018_bufm10_weekly_parcel_train.csv+ 
-## Writes output 5 BEFL2018_bufm10_weekly_parcel_test.csv 
-
 parcel_train_csv = os.path.join(class_dir, f"{base_filename}_parcel_train.csv")
 parcel_test_csv = os.path.join(class_dir, f"{base_filename}_parcel_test.csv")
 class_pre.create_train_test_sample(input_parcel_csv=parcel_csv,
@@ -228,31 +222,22 @@ class_pre.create_train_test_sample(input_parcel_csv=parcel_csv,
                                    balancing_strategy=balancing_strategy)
 
 # Train the classifier and output test predictions
-
-## Writes output 6 BEFL2018_bufm10_weekly_parcel_train_classifier.pkl
-## Writes output 7 BEFL2018_bufm10_weekly_predict_test.csv+ 
-## Writes output 8 BEFL2018_bufm10_weekly_predict_all.csv+ 
-classifier_filepath = os.path.splitext(parcel_train_csv)[0] + "_classifier.pkl" #'x:\\Monitoring\\Markers\\PlayGround\\JanAnt\\2018_class_landcover_mon\\Run_012\\BEFL2018_bufm10_weekly_parcel_train_classifier.pkl'
-parcel_predictions_test_csv = os.path.join(class_dir, f"{base_filename}_predict_test.csv") # 'x:\\Monitoring\\Markers\\PlayGround\\JanAnt\\2018_class_landcover_mon\\Run_012\\BEFL2018_bufm10_weekly_predict_test.csv'
-parcel_predictions_all_csv = os.path.join(class_dir, f"{base_filename}_predict_all.csv") # 'x:\\Monitoring\\Markers\\PlayGround\\JanAnt\\2018_class_landcover_mon\\Run_012\\BEFL2018_bufm10_weekly_predict_all.csv'
+classifier_filepath = os.path.splitext(parcel_train_csv)[0] + "_classifier.pkl"
+parcel_predictions_test_csv = os.path.join(class_dir, f"{base_filename}_predict_test.csv")
+parcel_predictions_all_csv = os.path.join(class_dir, f"{base_filename}_predict_all.csv")
 classification.train_test_predict(input_parcel_train_csv=parcel_train_csv,
                                   input_parcel_test_csv=parcel_test_csv,
                                   input_parcel_all_csv=parcel_csv,
                                   input_parcel_classification_data_csv=parcel_classification_data_csv,
                                   output_classifier_filepath=classifier_filepath,
                                   output_predictions_test_csv=parcel_predictions_test_csv,
+
                                   output_predictions_all_csv=parcel_predictions_all_csv)
 '''
-# STEP 5: if necessary, postprocess results
+# STEP 5: in necessary, postprocess results
 #-------------------------------------------------------------
-#if postprocess_to_groups is not None:
-    ...ToDo functie oproepen en import doen nieuwe module
-output_predictions_postpr_test_csv = os.path.join(class_dir, f"{base_filename}_predict_test_postpr.csv")
-output_predictions_postpr_all_csv = os.path.join(class_dir, f"{base_filename}_predict_all_postpr.csv")
-postprocess(input_predictions_csv=output_predictions_test_csv,
-            output_predictions_csv=output_predictions_postpr_test_csv)
-postprocess(input_predictions_csv=parcel_predictions_all_csv,
-            output_predictions_postpr_all_csv)
+if postprocess_to_groups is not None:
+    ...ToDo
 '''
 
 # STEP 6: Report on the test accuracy, incl. ground truth
@@ -260,29 +245,27 @@ postprocess(input_predictions_csv=parcel_predictions_all_csv,
 # Preprocess the ground truth data
 groundtruth_csv = None
 if input_groundtruth_csv is not None:
-    input_gt_noext, input_gt_ext = os.path.splitext(input_groundtruth_csv) # Split the pathname path into a pair (root, ext)
+    input_gt_noext, input_gt_ext = os.path.splitext(input_groundtruth_csv)
     groundtruth_csv = os.path.join(class_dir, f"{input_gt_noext}_classes{input_gt_ext}")
     class_pre.prepare_input(input_parcel_filepath=input_groundtruth_csv,
                             input_filetype=input_parcel_filetype,
                             input_parcel_pixcount_csv=parcel_pixcount_csv,
                             output_parcel_filepath=groundtruth_csv,
                             input_classtype_to_prepare=f"{classtype_to_prepare}_GROUNDTRUTH")
+else:
+    print ("Ik vind niets!", input_groundtruth_csv)
 
 # Print full reporting on the accuracy
-report_txt = f"{parcel_predictions_test_csv}_accuracy_report.txt" # x:\\Monitoring\\Markers\\PlayGround\\JanAnt\\2018_class_landcover_mon\\Run_012\\BEFL2018_bufm10_weekly_predict_test.csv_accuracy_report.txt'
-#class_report.write_full_report(parcel_predictions_csv=parcel_predictions_postpr_test_csv,
-## Writes output 9 BEFL2018_bufm10_weekly_predict_test.csv_accuracy_report.txtgroundtruth_pred_quality_details.csv
-## Writes output 10 BEFL2018_bufm10_weekly_predict_test.csv_accuracy_report.txt
-## Writes output 11 BEFL2018_bufm10_weekly_predict_test.csv_accuracy_report.html
+report_txt = f"{parcel_predictions_test_csv}_accuracy_report.txt"
 class_report.write_full_report(parcel_predictions_csv=parcel_predictions_test_csv,
                                output_report_txt=report_txt,
                                parcel_ground_truth_csv=groundtruth_csv)
+
 
 # STEP 7: Report on the full accuracy, incl. ground truth
 #-------------------------------------------------------------
 # Print full reporting on the accuracy
 report_txt = f"{parcel_predictions_all_csv}_accuracy_report.txt"
-#class_report.write_full_report(parcel_predictions_csv=parcel_predictions_postpr_all_csv,
 class_report.write_full_report(parcel_predictions_csv=parcel_predictions_all_csv,
                                output_report_txt=report_txt,
                                parcel_ground_truth_csv=groundtruth_csv)

@@ -78,7 +78,7 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
         logger.info(f"Process input file {input_parcel_filepath}")
 
     input_dir = os.path.split(input_parcel_filepath)[0]
-    input_classes_filepath = os.path.join(input_dir, "MONGROEPEN_20180713.csv")
+    input_classes_filepath = os.path.join(input_dir, "MONGROEPEN_new3.csv")
     if not os.path.exists(input_classes_filepath):
         raise Exception(f"Input classes file doesn't exist: {input_classes_filepath}")
     else:
@@ -154,8 +154,10 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
 
     # Copy orig classname to classification classname
     df_parceldata.insert(loc=0, column=gs.class_column, value=df_parceldata[gs.class_orig_column])
-
+##JAN
+#'''  
     # If a column with extra info exists, use it as well to fine-tune the classification classes.
+    '''
     if 'GESP_PM' in df_parceldata.columns:
         # Serres, tijdelijke overkappingen en loodsen
         df_parceldata.loc[df_parceldata['GESP_PM'].isin(['SER', 'SGM']), gs.class_column] = 'SERRES'
@@ -166,6 +168,9 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
         #df_parceldata.loc[df_parceldata['GESP_PM'] == 'CIV', class_columnname] = 'MON_CONTAINERS'   # Containers, niet op volle grond...
     else:
         logger.warning("The column 'GESP_PM' doesn't exist, so this part of the code was skipped!")
+        '''
+#JAN
+#'''
 
     # Some extra cleanup: classes starting with 'nvt' or empty ones
     logger.info("Set classes that are still empty, not specific enough or that contain to little values to 'UNKNOWN'")
@@ -186,11 +191,13 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
 
     # MON_BONEN en MON_WIKKEN have omongst each other a very large percentage of false
     # positives/negatives, so they seem very similar... lets create a class that combines both
-    df_parceldata.loc[df_parceldata[gs.class_column].isin(['MON_BONEN', 'MON_WIKKEN']), gs.class_column] = 'MON_BONEN_WIKKEN'
+
+    ###JAN df_parceldata.loc[df_parceldata[gs.class_column].isin(['MON_BONEN', 'MON_WIKKEN']), gs.class_column] = 'MON_BONEN_WIKKEN'
 
     # MON_BOOM includes now also the growing new plants/trees, which is too differenct from grown
     # trees -> put growing new trees is seperate group
-    df_parceldata.loc[df_parceldata[crop_columnname].isin(['9602', '9603', '9604', '9560']), gs.class_column] = 'MON_BOOMKWEEK'
+
+    ###JAN df_parceldata.loc[df_parceldata[crop_columnname].isin(['9602', '9603', '9604', '9560']), gs.class_column] = 'MON_BOOMKWEEK'
 
     # 'MON_FRUIT': has a good accuracy (91%), but also has as much false positives (115% -> mainly
     #              'MON_GRASSEN' that are (mis)classified as 'MON_FRUIT')
@@ -199,11 +206,13 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
     # MON_FRUIT and MON_BOOM are permanent anyway, so not mandatory that they are checked in
     # monitoring process.
     # Conclusion: put MON_BOOM and MON_FRUIT to IGNORE_DIFFICULT_PERMANENT_CLASS
-    df_parceldata.loc[df_parceldata[gs.class_column].isin(['MON_BOOM', 'MON_FRUIT']), gs.class_column] = 'IGNORE_DIFFICULT_PERMANENT_CLASS'
-
+ 
+    ###JAN df_parceldata.loc[df_parceldata[gs.class_column].isin(['MON_BOOM', 'MON_FRUIT']), gs.class_column] = 'IGNORE_DIFFICULT_PERMANENT_CLASS'
+  
     # Put MON_STAL, SERRES en TIJDELIJKE OVERK together, too many misclassifiactions amongst
     # each other
-    df_parceldata.loc[df_parceldata[gs.class_column].isin(['MON_STAL', 'SERRES', 'TIJDELIJKE_OVERK']), gs.class_column] = 'MON_STAL_SER'
+ 
+    ###JAN df_parceldata.loc[df_parceldata[gs.class_column].isin(['MON_STAL', 'SERRES', 'TIJDELIJKE_OVERK']), gs.class_column] = 'MON_STAL_SER'
 
     # Set classes with very few elements to UNKNOWN!
     for index, row in df_parceldata.groupby(gs.class_column).size().reset_index(name='count').iterrows():
@@ -248,7 +257,10 @@ def prepare_input_landcover(input_parcel_filepath: str,
 
     input_dir = os.path.split(input_parcel_filepath)[0]
     # TODO: Check MON_LC_groep classificatie (3 klassen gras akker nietsub ) met business 
-    input_classes_filepath = os.path.join(input_dir, "LANDCOVERGROEPEN_20190118.csv")
+#JAN
+    #input_classes_filepath = os.path.join(input_dir, "LANDCOVERGROEPEN_new3.csv")
+    input_classes_filepath = os.path.join(input_dir, "refe_mon_cropgroups_landcover_2018.csv")
+#JAN
     if not os.path.exists(input_classes_filepath):
         raise Exception(f"Input classes file doesn't exist: {input_classes_filepath}")
     else:
