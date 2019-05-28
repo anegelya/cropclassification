@@ -71,13 +71,6 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
     else:
         logger.info(f"Process input file {input_parcel_filepath}")
 
-    input_dir = os.path.split(input_parcel_filepath)[0]
-    input_classes_filepath = os.path.join(input_dir, "MONGROEPEN_new3.csv")
-    if not os.path.exists(input_classes_filepath):
-        raise Exception(f"Input classes file doesn't exist: {input_classes_filepath}")
-    else:
-        logger.info(f"Process input class table file {input_classes_filepath}")
-
     # Read and cleanup the mapping table from crop codes to classes
     #--------------------------------------------------------------------------
     input_dir = os.path.split(input_parcel_filepath)[0]
