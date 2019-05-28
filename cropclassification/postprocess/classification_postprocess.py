@@ -48,28 +48,29 @@ def reclassify(input_parcel_filepath: str,
 
     reclassify_unique = df_refe_mon_cropgroups_landcover_2018[[reclassify_dest_class_columnname, reclassify_src_class_columnname]].drop_duplicates()
 
-    # Set the indexes to join    
+    # Set the indexes needed to join
     if reclassify_unique.index.name != reclassify_src_class_columnname:
         reclassify_unique.set_index(reclassify_src_class_columnname, inplace=True)
     if input_parcel_df.index.name != conf.columns['class']:
         input_parcel_df.reset_index(inplace=True)
         input_parcel_df.set_index(conf.columns['class'], inplace=True)
-    # Reclass input parcelfile + write to output
 
-    
-
-    input_parcelreclassified_df = input_parcel_df.join(reclassify_unique[reclassify_dest_class_columnname], how='left')     
-     
+    # Reclass input parcelfile based on reclassify file
+    input_parcelreclassified_df = input_parcel_df.join(reclassify_unique[reclassify_dest_class_columnname], how='left')
     input_parcelreclassified_df.rename(columns={reclassify_dest_class_columnname: conf.columns['class']}, inplace=True)
     input_parcelreclassified_df.reset_index(drop=True, inplace=True)
-    
-    pdh.to_file(input_parcelreclassified_df, output_parcel_filepath, index=False)
+
+    # For classes that weren't reclassified, just keep original class
+    input_parcelreclassified_df.loc[input_parcelreclassified_df[conf.columns['class']].isnull(), conf.columns['class']] = input_parcelreclassified_df[classname_before_reclassify]
+
     df_refe_mon_cropgroups_landcover_2018.reset_index(inplace=True)
+    
+    # Write to output 
+    pdh.to_file(input_parcelreclassified_df, output_parcel_filepath, index=False)
     
     # then read the prediction input file
     df_parcel_predictions_proba = pdh.read_file(input_predictions_proba_filepath)
     
-    """
     # Get list of groups to reclassify to
     reclassify_src_class_columnname = 'MON_LC_GROUP'
     reclassify_dest_class_columnname = 'MON_CROPGROUP'
@@ -85,9 +86,8 @@ def reclassify(input_parcel_filepath: str,
 
     # Write the output file
     pdh.to_file(df_output_predictions_fortop3, output_predictions_proba_filepath)
-    """
 
-    #"""
+    """
     # STEP 2_1 Making lists of all possible MON_CROPGROUP values (82) per MON_LC_GROUP based on the input tabel(= ALL_***_LIST)
     ALL_MON_CROPGROUPS_IN_MON_LC_ARABLE_LIST= df_refe_mon_cropgroups_landcover_2018[df_refe_mon_cropgroups_landcover_2018['MON_LC_GROUP'] == 'MON_LC_ARABLE']['MON_CROPGROUP'].unique().tolist() # number=67
     ALL_MON_CROPGROUPS_IN_MON_LC_FABACEAE_LIST = df_refe_mon_cropgroups_landcover_2018[df_refe_mon_cropgroups_landcover_2018['MON_LC_GROUP'] == 'MON_LC_FABACEAE']['MON_CROPGROUP'].unique().tolist() # number=8! not 9  NOT MON_BONEN_WIKKEN !!!
@@ -144,7 +144,7 @@ def reclassify(input_parcel_filepath: str,
     pdh.to_file(df_output_predictions_fortop3, output_predictions_proba_filepath)
     
     
-    #"""
+    """
 
 
 def calc_top3_and_consolidation(input_parcel_filepath: str,
