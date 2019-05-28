@@ -160,7 +160,6 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
         #parceldata_df.loc[parceldata_df['GESP_PM'] == 'CIV', class_columnname] = 'MON_CONTAINERS'   # Containers, niet op volle grond...
     else:
         logger.warning("The column 'GESP_PM' doesn't exist, so this part of the code was skipped!")
-        
 
     # Some extra cleanup: classes starting with 'nvt' or empty ones
     logger.info("Set classes that are still empty, not specific enough or that contain to little values to 'UNKNOWN'")
@@ -181,11 +180,11 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
 
     # MON_BONEN en MON_WIKKEN have omongst each other a very large percentage of false
     # positives/negatives, so they seem very similar... lets create a class that combines both
-    parceldata_df.loc[parceldata_df[conf.columns['class']].isin(['MON_BONEN', 'MON_WIKKEN']), conf.columns['class']] = 'MON_BONEN_WIKKEN'
+    #parceldata_df.loc[parceldata_df[conf.columns['class']].isin(['MON_BONEN', 'MON_WIKKEN']), conf.columns['class']] = 'MON_BONEN_WIKKEN'
 
     # MON_BOOM includes now also the growing new plants/trees, which is too differenct from grown
     # trees -> put growing new trees is seperate group
-    parceldata_df.loc[parceldata_df[crop_columnname].isin(['9602', '9603', '9604', '9560']), conf.columns['class']] = 'MON_BOOMKWEEK'
+    #parceldata_df.loc[parceldata_df[crop_columnname].isin(['9602', '9603', '9604', '9560']), conf.columns['class']] = 'MON_BOOMKWEEK'
 
     # 'MON_FRUIT': has a good accuracy (91%), but also has as much false positives (115% -> mainly
     #              'MON_GRASSEN' that are (mis)classified as 'MON_FRUIT')
@@ -198,7 +197,7 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
 
     # Put MON_STAL, SERRES en TIJDELIJKE OVERK together, too many misclassifiactions amongst
     # each other
-    parceldata_df.loc[parceldata_df[conf.columns['class']].isin(['MON_STAL', 'SERRES', 'TIJDELIJKE_OVERK']), conf.columns['class']] = 'MON_STAL_SER'
+    parceldata_df.loc[parceldata_df[conf.columns['class']].isin(['MON_STAL', 'SERRES', 'TIJDELIJKE_OVERK', 'MON_CONTAINERS']), conf.columns['class']] = 'IGNORE_DIFFICULT_PERMANENT_CLASS'
 
     # Set classes with very few elements to UNKNOWN!
     for index, row in parceldata_df.groupby(conf.columns['class']).size().reset_index(name='count').iterrows():

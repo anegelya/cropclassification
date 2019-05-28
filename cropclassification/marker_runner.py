@@ -63,9 +63,8 @@ def run(config_filepaths: []):
     imagedata_dir = conf.dirs['imagedata_dir']
 
     # Settings for preprocessing the inputdata
-    classtype_to_prepare = conf.marker['markertype']
-    balancing_strategy = conf.marker['balancing_strategy']
-    postprocess_to_groups = conf.marker['postprocess_reclassify']  
+    classtype_to_prepare = conf.marker['input_classtype_to_prepare']
+    balancing_strategy = conf.marker['balancing_strategy']  
     buffer = conf.marker.getint('buffer')
     input_parcel_filename = os.path.basename(input_parcel_filepath)
     input_parcel_filename_noext, _ = os.path.splitext(input_parcel_filename)
@@ -222,7 +221,7 @@ def run(config_filepaths: []):
                                 input_filetype=input_parcel_filetype,
                                 input_parcel_pixcount_filepath=parcel_pixcount_filepath,
                                 output_parcel_filepath=groundtruth_filepath,
-                                input_classtype_to_prepare=f"{classtype_to_prepare}_GROUNDTRUTH")
+                                input_classtype_to_prepare=f"{conf.marker['input_classtype_to_prepare_groundtruth']}")
 
     # Print full reporting on the accuracy
     report_txt = f"{parcel_predictions_test_filepath}_accuracy_report.txt"
