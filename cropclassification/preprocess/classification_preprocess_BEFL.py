@@ -80,17 +80,24 @@ def prepare_input_cropgroups(input_parcel_filepath: str,
 
     # Read and cleanup the mapping table from crop codes to classes
     #--------------------------------------------------------------------------
-    # REM: needs to be read as ANSI, as excel apperently saves as ANSI
+    input_dir = os.path.split(input_parcel_filepath)[0]
+    input_classes_filepath = os.path.join(input_dir, "refe_mon_cropgroups_landcover_2018.csv")
+    if not os.path.exists(input_classes_filepath):
+        raise Exception(f"Input classes file doesn't exist: {input_classes_filepath}")
+    else:
+        logger.info(f"Process input class table file {input_classes_filepath}")
+
+    # REM: needs to be read as ANSI, as SQLDetective apparently saves as ANSI
     logger.info(f"Read classes conversion table from {input_classes_filepath}")
     df_classes = pd.read_csv(input_classes_filepath, low_memory=False, sep=',', encoding='ANSI')
     logger.info(f"Read classes conversion table ready, info(): {df_classes.info()}")
 
     # Because the file was read as ansi, and gewas is int, so the data needs to be converted to
     # unicode to be able to do comparisons with the other data
-    df_classes[crop_columnname] = df_classes['Gewas'].astype('unicode')
+    df_classes[crop_columnname] = df_classes['CROPCODE'].astype('unicode')
 
     # Map column MON_group to orig classname
-    df_classes[conf.columns['class_orig']] = df_classes['MON_groep']
+    df_classes[conf.columns['class_orig']] = df_classes['MON_CROPGROUP']
 
     # Remove unneeded columns
     for column in df_classes.columns:

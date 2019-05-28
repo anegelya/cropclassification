@@ -60,7 +60,7 @@ def run(config_filepaths: []):
     # Settings for preprocessing the inputdata
     classtype_to_prepare = conf.marker['markertype']
     balancing_strategy = conf.marker['balancing_strategy']
-    postprocess_to_groups = conf.marker['postprocess_to_groups']  
+    postprocess_to_groups = conf.marker['postprocess_reclassify']  
     buffer = conf.marker.getint('buffer')
     input_parcel_filename = os.path.basename(input_parcel_filepath)
     input_parcel_filename_noext, _ = os.path.splitext(input_parcel_filename)
@@ -169,12 +169,26 @@ def run(config_filepaths: []):
                                       output_classifier_filepath=classifier_filepath,
                                       output_predictions_test_filepath=parcel_predictions_proba_test_filepath,
                                       output_predictions_all_filepath=parcel_predictions_proba_all_filepath)
-    
+
     # STEP 5: if necessary, do extra postprocessing
     #-------------------------------------------------------------    
-    '''if postprocess_to_groups is not None:
-        # TODO 
-    '''
+    if conf.marker.getboolean('postprocess_reclassify') is True:
+        parcel_test_reclassified_filepath = os.path.join(run_dir, f"{base_filename}_parcel_test_reclassified{rowdata_ext}")
+        parcel_reclassified_filepath = os.path.join(run_dir, f"{base_filename}_parcel_reclassified{rowdata_ext}")
+        parcel_predictions_proba_test_reclassified_filepath = os.path.join(run_dir, f"{base_filename}_predict_proba_test_reclassified{rowdata_ext}")
+        parcel_predictions_proba_all_reclassified_filepath = os.path.join(run_dir, f"{base_filename}_predict_proba_all_reclassified{rowdata_ext}")                
+        class_post.reclassify(input_parcel_filepath=parcel_test_filepath,
+                              output_parcel_filepath=parcel_test_reclassified_filepath,
+                              input_predictions_proba_filepath=parcel_predictions_proba_test_filepath,
+                              output_predictions_proba_filepath=parcel_predictions_proba_test_reclassified_filepath)
+        class_post.reclassify(input_parcel_filepath=parcel_filepath,
+                              output_parcel_filepath=parcel_reclassified_filepath,
+                              input_predictions_proba_filepath=parcel_predictions_proba_all_filepath,
+                              output_predictions_proba_filepath=parcel_predictions_proba_all_reclassified_filepath)
+        parcel_predictions_proba_test_filepath = parcel_predictions_proba_test_reclassified_filepath
+        parcel_predictions_proba_all_filepath = parcel_predictions_proba_all_reclassified_filepath
+        parcel_test_filepath = parcel_test_reclassified_filepath
+        parcel_filepath = parcel_reclassified_filepath
 
     # STEP 6: do the default, mandatory postprocessing
     #-------------------------------------------------------------    
