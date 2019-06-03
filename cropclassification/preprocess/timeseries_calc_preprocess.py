@@ -78,7 +78,7 @@ def prepare_input(input_parcel_filepath: str,
 
     # Read the parcel data and do the necessary conversions
     #--------------------------------------------------------------------------
-    parceldata_gdf = gpd.read_file(input_parcel_filepath)
+    parceldata_gdf = geofile_util.read_file(input_parcel_filepath)
     logger.info(f'Parceldata read, shape: {parceldata_gdf.shape}')
 
     # Check if the id column is present...
@@ -126,8 +126,10 @@ def prepare_input(input_parcel_filepath: str,
         target_epsg = 4326
         logger.info(f"Reproject features from {parceldata_buf_poly.crs} to epsg:{target_epsg}")
         parceldata_buf_poly_4326 = parceldata_buf_poly.to_crs(epsg=target_epsg)
+        logger.info(f"Write reprojeted features to {output_imagedata_parcel_input_4326_filepath}")
         parceldata_buf_poly_4326.to_file(output_imagedata_parcel_input_4326_filepath)
 
+    logger.info(f"Write buffered features to {output_imagedata_parcel_input_filepath}")
     parceldata_buf_poly.to_file(output_imagedata_parcel_input_filepath)
 
     # If the needed to be created... it didn't exist yet and so it needs to be uploaded manually
