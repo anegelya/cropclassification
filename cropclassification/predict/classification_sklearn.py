@@ -16,6 +16,11 @@ from sklearn.svm import SVC
 import cropclassification.helpers.config_helper as conf
 import cropclassification.helpers.pandas_helper as pdh
 
+from skl2onnx import convert_sklearn
+from skl2onnx.common.data_types import FloatTensorType, StringTensorType
+import skl2onnx.common.data_types as onnxcommon
+import onnxruntime as onxx_rt
+
 #-------------------------------------------------------------
 # First define/init some general variables/constants
 #-------------------------------------------------------------
@@ -56,7 +61,9 @@ def train(df_train: pd.DataFrame,
         max_depth = conf.classifier.getint('randomforest_max_depth')
         classifier = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth)
     elif classifier_type_lower == 'nearestneighbor':
-        classifier = KNeighborsClassifier(weights='distance', n_jobs=-1)
+        n_neighbors = conf.classifier.getint('nearestneighbor_n_neighbors')
+        weights = conf.classifier['nearestneighbor_weights']
+        classifier = KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights, n_jobs=-1)
     elif classifier_type_lower == 'multilayer_perceptron':
         hidden_layer_sizes = tuple(conf.classifier.getlistint('multilayer_perceptron_hidden_layer_sizes'))
         max_iter = conf.classifier.getint('multilayer_perceptron_max_iter')
@@ -74,9 +81,15 @@ def train(df_train: pd.DataFrame,
     logger.info(f"Start fitting classifier:\n{classifier}")
     classifier.fit(df_train_data, df_train_classes)
 
-    # Write the learned model to a file...
+    # write the learned model to a file -- onnx
+    datatype = onnxcommon.guess_data_type(df_train_data)
+    onnx = convert_sklearn(classifier, 'cropclassification', [('input', FloatTensorType([1, len(datatype)]))])
+    with open(output_classifier_filepath.replace('.pkl', '.onnx'), "wb") as f:
+        f.write(onnx.SerializeToString())
+
+    # Write the learned model to a file... -- pkl
     logger.info(f"Write the learned model file to {output_classifier_filepath}")
-    joblib.dump(classifier, output_classifier_filepath)
+    joblib.dump(classifier, output_classifier_filepath)    
 
 def predict_proba(df_input_parcel: pd.DataFrame,
                   input_classifier_filepath: str,
@@ -110,19 +123,41 @@ def predict_proba(df_input_parcel: pd.DataFrame,
     with pd.option_context('display.max_rows', None, 'display.max_columns', None):
         logger.info(f"Resulting Columns for training data: {df_input_data.columns}")
 
-    # Load the classifier
-    classifier = joblib.load(input_classifier_filepath)
-    logger.info(f"Classifier has the following columns: {classifier.classes_}")
+    #cols = [conf.columns['id'], conf.columns['class']]
 
-    logger.info(f"Predict classes with probabilities: {len(df_input_parcel)} rows")
-    class_proba = classifier.predict_proba(df_input_data)
-    logger.info(f"Predict classes with probabilities ready")
+    # Load the classifier
+    if (conf.classifier["use_onnx"]):
+        sess = onxx_rt.InferenceSession(input_classifier_filepath.replace(".pkl", ".onnx"))    
+        input_name = sess.get_inputs()[0].name
+        label_name = sess.get_outputs()[1].name # 0: predict, 1: predict_proba
+
+        class_proba = {}
+        input_data_reshaped_array = np.reshape(df_input_data.values, (len(df_input_data.index), len(df_input_data.columns)))
+        for i, x in enumerate(input_data_reshaped_array[:10]):
+            pred_onx = sess.run([label_name], {input_name: x})[0]
+            class_proba[i] = pred_onx[0]
+
+        #cols.extend(class_proba[0][0].keys())
+        class_proba_df = pd.DataFrame(class_proba)
+        
+    else:
+        classifier = joblib.load(input_classifier_filepath)
+        logger.info(f"Classifier has the following columns: {classifier.classes_}")
+
+        logger.info(f"Predict classes with probabilities: {len(df_input_parcel)} rows")
+        class_proba = classifier.predict_proba(df_input_data)
+        logger.info(f"Predict classes with probabilities ready")
+
+        #cols.extend(classifier.classes_)
+        class_proba_df = pd.DataFrame(class_proba, columns=classifier.classes_)
 
     # Convert probabilities to dataframe, combine with input data and write to file
-    id_class_proba = np.concatenate([df_input_parcel[[conf.columns['id'], conf.columns['class']]].values, class_proba], axis=1)
-    cols = [conf.columns['id'], conf.columns['class']]
-    cols.extend(classifier.classes_)
-    df_proba = pd.DataFrame(id_class_proba, columns=cols)
+    #id_class_proba = np.concatenate([df_input_parcel[[conf.columns['id'], conf.columns['class']]].values[:10], class_proba], axis=1)
+    #df_proba = class_proba_df.join(df_input_parcel[[conf.columns['id'], conf.columns['class']]], how='inner')
+    df_proba = class_proba_df
+    df_proba.insert(0, df_input_parcel[conf.columns['class']])
+    df_proba.insert(0, df_input_parcel[conf.columns['id']])
+    #df_proba = pd.DataFrame(id_class_proba, columns=cols)
 
     # If output path provided, write results
     if output_parcel_predictions_filepath:
