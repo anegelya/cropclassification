@@ -23,7 +23,6 @@ def main():
     test = False
 
     # Specify the date range:
-    #2018,
     years = [2019]
     month_start = 3
     month_stop = 8
@@ -114,12 +113,7 @@ def main():
 
         if test:
             # Take only the x first images found while testing
-            
-            #input_image_filepaths = input_image_filepaths[:10]
-            input_image_filepaths = []
-            input_image_filepaths.append("/mnt/NAS3/CARD/FLANDERS/S1A/L1TC/2018/04/09/S1A_IW_GRDH_1SDV_20180409T054153_20180409T054218_021386_024D13_D824_Orb_RBN_RTN_Cal_TC_20190612T171437.L1TC.CARD")
-            input_image_filepaths.append("/mnt/NAS3/CARD/FLANDERS/S1A/L1TC/2018/04/22/S1A_IW_GRDH_1SDV_20180422T173236_20180422T173301_021583_025328_99D1_Orb_RBN_RTN_Cal_TC_20190612T171441.L1TC.CARD")        
-
+            input_image_filepaths = input_image_filepaths[:10]
             logger.info(f"As we are only testing, process only {len(input_image_filepaths)} test images")
 
         calc_ts.calc_stats_per_image(
