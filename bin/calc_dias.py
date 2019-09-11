@@ -23,7 +23,8 @@ def main():
     test = False
 
     # Specify the date range:
-    years = [2018, 2019]
+    #2018,
+    years = [2019]
     month_start = 3
     month_stop = 8
     for year in years:
@@ -65,7 +66,7 @@ def main():
             input_features_filename = "Prc_BEFL_2018_2019-06-14_bufm5.shp"
         elif year == 2019:
             #input_features_filename = "Prc_BEFL_2019_2019-06-25_bufm5.shp"
-            input_features_filename = "Prc_BEFL_2019_2019-07-02_bufm5.shp"
+            input_features_filename = "Prc_BEFL_2019_2019-08-14_bufm5.shp"
         else:
             raise Exception(f"Not a valid year: {year}")
         input_features_filepath = os.path.join(input_preprocessed_dir, input_features_filename)

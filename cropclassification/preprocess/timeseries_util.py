@@ -384,7 +384,7 @@ def get_file_info(filepath: str) -> dict:
         filename_parcelinfo = filename_splitted[0]
         filename_imageinfo = filename_splitted[1]
 
-        # Extract imageinfo
+        # Extrac²
         imageinfo_values = filename_imageinfo.split("_")    
 
         # Satellite 

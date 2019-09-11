@@ -62,18 +62,18 @@ def calc_stats_per_image(
     os.makedirs(temp_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
     
-    # Create process pool for parallelisation...
+    # Create process pool for parallelisation ...
     nb_parallel_max = multiprocessing.cpu_count()
     nb_parallel = nb_parallel_max
     with futures.ProcessPoolExecutor(nb_parallel) as pool:
 
-        # Loop over all images to start the data preparation for each of them in parallel...
+        # Loop over all images to start the data preparation for each of them in parallel ...
         image_paths.sort()
         start_time = datetime.now()
         nb_todo = len(image_paths)
         nb_errors_max = 10
         nb_errors = 0
-
+        
         image_dict = {}
         calc_stats_batch_dict = {}
         nb_done_total = 0
@@ -81,7 +81,7 @@ def calc_stats_per_image(
 
         try:
             # Keep looping. At the end of the loop there are checks when to
-            # break out of the loop...
+            # break out of the loop ...
             while True:
 
                 ##### Start preparation for calculation on next image + features combo #####
@@ -105,7 +105,7 @@ def calc_stats_per_image(
                         nb_todo -= 1
                         continue
 
-                    # If sentinel2 and cloud coverage too high... skip
+                    # If sentinel2 and cloud coverage too high ... skip
                     if(max_cloudcover_pct >= 0 
                             and image_info['satellite'].startswith('S2') 
                             and image_info['Cloud_Coverage_Assessment'] > max_cloudcover_pct):
@@ -131,13 +131,13 @@ def calc_stats_per_image(
                     # Check for which bands there is a valid output file already
                     bands_done = 0
                     for band in bands:
-                        # Prepare the output filepaths...
+                        # Prepare the output filepaths ...
                         output_band_filepath = format_output_filepath(
                                 features_filepath, image_path, output_dir, orbit, band)
                         output_band_dir, output_band_filename = os.path.split(output_band_filepath)
                         output_band_busy_filepath = f"{output_band_dir}{os.sep}BUSY_{output_band_filename}"
 
-                        # If a busy output file exists, remove it, otherwise we can get double data in it...
+                        # If a busy output file exists, remove it, otherwise we can get double data in it ...
                         if os.path.exists(output_band_busy_filepath):
                             os.remove(output_band_busy_filepath)
 
@@ -149,14 +149,14 @@ def calc_stats_per_image(
                             else:
                                 os.remove(output_band_filepath)
 
-                    # If all bands already processed, skip image...
+                    # If all bands already processed, skip image ...
                     if len(bands) == bands_done:
                         logger.info(f"SKIP image: output files for all bands exist already for {output_base_filepath}")
                         nb_todo -= 1
                         continue
 
                     # Start the prepare processing assync
-                    # TODO: possibly it is cleaner to do this per band...
+                    # TODO: possibly it is cleaner to do this per band ...
                     future = pool.submit(prepare_calc, 
                                         features_filepath,
                                         id_column,
@@ -173,7 +173,7 @@ def calc_stats_per_image(
                                             'output_base_busy_filepath': output_base_busy_filepath,
                                             'status': 'IMAGE_PREPARE_CALC_BUSY'}
                     
-                    # Jump to next image to start the prepare_calc for it...
+                    # Jump to next image to start the prepare_calc for it ...
                     continue
 
                 ##### For images busy preparing: if ready: start real calculation in batches #####
@@ -191,10 +191,10 @@ def calc_stats_per_image(
                         # Get the result from the completed  prepare_inputs
                         prepare_calc_result = image['prepare_calc_future'].result()
 
-                        # If nb_features to be treated is 0... create (empty) output files and continue with next...
+                        # If nb_features to be treated is 0 ... create (empty) output files and continue with next ...
                         if prepare_calc_result['nb_features_to_calc_total'] == 0:
                             for band in bands:
-                                # Prepare the output filepath...
+                                # Prepare the output filepath ...
                                 orbit = None
                                 if image['image_info']['satellite'].startswith('S1'):
                                     orbit = image['image_info']['orbit_properties_pass']

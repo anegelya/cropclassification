@@ -29,6 +29,8 @@ def run_jobs():
         job_config.read(job_filepath)
 
         # Now get the info we want from the job config
+        # marina
+        calculation_type = job_config['job']['calculation_type'] # to do : init in inifile
         markertype_to_calc = job_config['job']['markertype_to_calc']
         input_parcel_filename = job_config['job']['input_parcel_filename']
         input_parcel_filetype = job_config['job']['input_parcel_filetype']
@@ -42,16 +44,24 @@ def run_jobs():
         else:
             input_model_to_use_filepath = None
 
+        # marina
         # Run!
-        marker_runner.run(
-                markertype_to_calc=markertype_to_calc,
-                input_parcel_filename=input_parcel_filename,
-                input_parcel_filetype=input_parcel_filetype,
-                country_code=country_code,
-                year=year,
-                classes_refe_filename=classes_refe_filename,
-                input_groundtruth_filename=input_groundtruth_filename,
-                input_model_to_use_filepath=input_model_to_use_filepath)
+        if calculation_type == 'MARKER':
+            marker_runner.run(
+                    markertype_to_calc=markertype_to_calc,
+                    input_parcel_filename=input_parcel_filename,
+                    input_parcel_filetype=input_parcel_filetype,
+                    country_code=country_code,
+                    year=year,
+                    classes_refe_filename=classes_refe_filename,
+                    input_groundtruth_filename=input_groundtruth_filename,
+                    input_model_to_use_filepath=input_model_to_use_filepath)
+        
+        elif calculation_type == 'TIMESERIES':
+            calc_dias.main() 
 
+        elif calculation_type == 'TESTBARESOIL':
+            calc_dias_baresoil.main() 
+        
 if __name__ == '__main__':
     run_jobs()
