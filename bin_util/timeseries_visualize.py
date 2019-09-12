@@ -91,10 +91,22 @@ def show(input_parcel_filepath: str,
 # If the script is run directly...
 if __name__ == "__main__":
         
-    local_data_basedir = r"X:\Monitoring\Markers\playground\pierog"
-    local_data_dir = os.path.join(local_data_basedir, r"2019_LANDCOVER\Run_2019-08-19_001")
-    input_parcel_filepath = os.path.join(local_data_dir , "Prc_BEFL_2019_2019-08-14_bufm5_weekly_parcel_classdata.sqlite")
-    show(input_parcel_filepath, filter_id = '0000280800C79F930000000C')
+    local_data_basedir = r"X:\Monitoring\Markers\playground\market"
+    local_data_dir = os.path.join(local_data_basedir, r"output\baresoil")
+    input_parcel_filepath = os.path.join(local_data_dir , "Lijst_percelen_Datum.csv") #moet sqllite zijn?
+    show(input_parcel_filepath, filter_id = '0000280864DEAAE200000011')
+
+
+#%%
+
+
+#%%
+
+
+#%%
+
+
+#%%
 
 
 #%%

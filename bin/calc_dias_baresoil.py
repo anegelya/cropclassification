@@ -15,7 +15,6 @@ from cropclassification.helpers import pandas_helper as pdh
 from cropclassification.helpers import config_helper as conf
 
 
-
 """
 from datetime import datetime
 import glob
@@ -32,7 +31,7 @@ def Summarize_Coverage_Bare():
     logger = logging.getLogger(__name__)
 
     # Init    
-    input_dir = 'X:\Monitoring\Markers\playground\market\_timeseries_per_image\Prc_BEFL_2019_2019-08-14_bufm5'
+    input_dir = r'X:\Monitoring\Markers\playground\market\_timeseries_per_image\Prc_BEFL_2019_2019-08-14_bufm5'
     input_ext = '.sqlite'
    
     # Create Dataframe of all SCL files with their info
@@ -42,46 +41,51 @@ def Summarize_Coverage_Bare():
     for filename in os.listdir(input_dir): 
         if filename.endswith(input_ext):   
             
-            # create dataslc eruithalen
+            # Get SLC files
             file_info = ts_util.get_file_info(os.path.join(input_dir, filename)) 
             if file_info["band"] == 'SCL-20m':
-                print(file_info["filepath"])
-                #filelist.append(file_info["filepath"]) #path telkens voorafgegaan door index, #eerste lijn ook steeds 0
+                # print(file_info["filepath"])
                 filelist.append(file_info) 
                 
 
-            # todo marina: nog filteren op start en einddatum  
+            # todo marina: nog filteren op start en einddatum :tch niet dit wordt doorgegeven vanuit calc_dias
 
     SCL_imagefiles_df = pd.DataFrame(filelist)
     
-
     # Write to file                                                              #temp - mag nadien weg
-    output_dir = 'X:\Monitoring\Markers\playground\market\output'
+    output_dir = r'X:\Monitoring\Markers\playground\market\output\baresoil'
     output_ext = '.csv'
     output_filename = f"Lijst_alle_SCLbeelden{output_ext}" 
     output_filepath = os.path.join(output_dir, output_filename)
     pdh.to_file(SCL_imagefiles_df, output_filepath)
 
+    SCL_imagefiles_df = SCL_imagefiles_df.sort_values('filename', ascending=False)
 
     # Init
     Columns_to_use_dict = {'UID':[], 'vegetation':[], 'not_vegetated':[]}
     period_band_data_df = None
 
-    SCL_imagefiles_df.sort_values('filename', ascending=False) # zinloos?
-
     # Read the SCL files and get the necessary info
-    for j, imagedata_filepath in enumerate(SCL_imagefiles_df.filepath.tolist().sort_values('filename', ascending=False)):  
+    for j, imagedata_filepath in enumerate(SCL_imagefiles_df.filepath.tolist()):  
 
         # If file has filesize == 0, skip
         if os.path.getsize(imagedata_filepath) == 0:
             continue
             
+        # Get the date from the filename
+        filename = os.path.split(imagedata_filepath)[1]
+        datetime_fromfile = filename.split('_')[8]
+        date_fromfile = datetime_fromfile.split('T')[0]
+
         # Read the file 
-        image_data_df = pdh.read_file(imagedata_filepath)
+        # image_data_df = pdh.read_file(imagedata_filepath)
         
         # Keep only the necessary columns 
         columns = [column for column in Columns_to_use_dict]
         image_data_df = pdh.read_file(imagedata_filepath, columns=columns)
+        image_data_df['Date'] = date_fromfile
+
+
         image_data_df.set_index('UID', inplace=True)
         # image_data_df.index.name = 'UID'
 
@@ -93,13 +97,9 @@ def Summarize_Coverage_Bare():
             logger.warning(f"Before dropna: {nb_before_dropna}, after: {nb_after_dropna} for file {imagedata_filepath}")
         if nb_after_dropna == 0:
             continue
-                           
-        # Rename columns so column names stay unique
-        # Get the date from the filename
-        filename = os.path.split(imagedata_filepath)[1]
-        datetime_fromfile = filename.split('_')[8]
-        date_fromfile = datetime_fromfile.split('T')[0]
 
+        # Rename columns so column names stay unique
+        '''
         for Used_Column in Columns_to_use_dict:
             if Used_Column == 'UID':
                 continue
@@ -109,34 +109,31 @@ def Summarize_Coverage_Bare():
                                  inplace=True)
             #image_data_df[new_column_name] = image_data_df[new_column_name].astype(float) #?
             Columns_to_use_dict[Used_Column].append(new_column_name)
+        '''
         
         # Create 1 dataframe for all files - one row for each UID - using concat (UID = index)
         if period_band_data_df is None:
-            period_band_data_df = image_data_df                
+            period_band_data_df = image_data_df  
+            #period_band_data_df.set_index('UID', inplace=True)              
+            period_band_data_df.index.name = 'UID'
         else:
-            period_band_data_df = pd.concat([period_band_data_df, image_data_df], axis=1, sort=False)
+            period_band_data_df = pd.concat([period_band_data_df, image_data_df], axis=0) #, sort=False)  #marina: check: wat doet sort?
             # Apparently concat removes the index name in some situations
             period_band_data_df.index.name = 'UID'
 
-
-        # Write to file                                                           #temp - mag nadien weg
-        output_dir = 'X:\Monitoring\Markers\playground\market\output'             #waarom lukt het niet om weg te schrijven in baresoil \b ?
-        output_ext = '.csv'
-        output_filename = f"Temp{output_ext}" #todo : naamgeving bekijken
-        output_filepath = os.path.join(output_dir, output_filename)
-        pdh.to_file(period_band_data_df, output_filepath)
-
-                                                                                        #temp - mag nadien weg
-        if j == 10:
-            break
-
         
+        # if j == 5:
+        #     break
 
-
+    # Write to file                                                                 #temp - mag nadien weg
+    output_dir = r'X:\Monitoring\Markers\playground\market\output\baresoil'
+    output_ext = '.csv'
+    output_filename = f"Lijst_percelen_Datum{output_ext}" #todo : naamgeving bekijken
+    output_filepath = os.path.join(output_dir, output_filename)
+    pdh.to_file(period_band_data_df, output_filepath)
 
     print('end')
     
-
 
 if __name__ == '__main__':
     Summarize_Coverage_Bare()
