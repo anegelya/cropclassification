@@ -23,9 +23,9 @@ def main():
     test = False
 
     # Specify the date range:
-    years = [2019]
+    years = [2017,2018]
     month_start = 3
-    month_stop = 8
+    month_stop = 12
     for year in years:
 
         # Read the configuration files
@@ -103,7 +103,7 @@ def main():
         logger.info("Ready")
         # Start calculation
         """
-
+        """
         ##### Process S1 GRD images #####
         input_image_filepaths = []
         for i in range(month_start, month_stop+1):
@@ -124,6 +124,7 @@ def main():
                 output_dir=output_dir,
                 temp_dir=temp_dir,
                 log_dir=log_dir)
+        """
 
         ##### Process S2 images #####
         input_image_filepaths = []
@@ -149,6 +150,7 @@ def main():
                 log_dir=log_dir,
                 max_cloudcover_pct=max_cloudcover_pct)
 
+        """
         ##### Process S1 Coherence images #####   
         input_image_filepaths = []
         for i in range(month_start, month_stop+1):
@@ -168,6 +170,7 @@ def main():
                 output_dir=output_dir,
                 temp_dir=temp_dir,
                 log_dir=log_dir)
+        """
 
 if __name__ == '__main__':
     main()
