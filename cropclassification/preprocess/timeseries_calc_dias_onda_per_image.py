@@ -759,8 +759,8 @@ def calc_stats_image_gdf(
                         8.0: 'cloud_mediumproba', 9.0: 'cloud_highproba', 10: 'cloud_thincirrus', 
                         11.0: 'snow'}
         # Define which columns contain good pixels and which don't
-        bad_pixels_cols = ['nodata', 'saturated', 'dark', 'snow',
-                           'cloud_mediumproba', 'cloud_highproba']
+        bad_pixels_cols = ['nodata', 'saturated', 'dark', 'cloud_shadow', 
+                           'cloud_mediumproba', 'cloud_highproba', 'snow']
         image_data = get_image_data(
                 image_path, bounds=features_total_bounds, bands=[quality_band], pixel_buffer=1)
         # Before zonal_stats, do reset_index so index is "clean", otherwise the concat/insert/... 
