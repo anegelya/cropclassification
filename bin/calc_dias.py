@@ -23,9 +23,9 @@ def main():
     test = False
 
     # Specify the date range:
-    years = [2019]
-    month_start = 3
-    month_stop = 8
+    years = [2017,2018,2019]
+    month_start = 6
+    month_stop = 12
     for year in years:
 
         # Read the configuration files

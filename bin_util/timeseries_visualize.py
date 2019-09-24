@@ -96,17 +96,3 @@ if __name__ == "__main__":
     input_parcel_filepath = os.path.join(local_data_dir , "Lijst_percelen_Datum.csv") #moet sqllite zijn?
     show(input_parcel_filepath, filter_id = '0000280864DEAAE200000011')
 
-
-#%%
-
-
-#%%
-
-
-#%%
-
-
-#%%
-
-
-#%%
