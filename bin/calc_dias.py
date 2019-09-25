@@ -30,6 +30,7 @@ def main():
     calculation['calc_date_stop'] = datetime.date(2018, 3, 1)
     calculations.append(calculation)
 
+    calculation = {}
     calculation['parcel_year'] = 2018
     calculation['calc_date_start'] = datetime.date(2018, 5, 1)
     calculation['calc_date_stop'] = datetime.date(2019, 3, 1)
