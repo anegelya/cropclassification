@@ -49,7 +49,7 @@ def train_test_predict(input_parcel_train_filepath: str,
        #and os.path.exists(output_classifier_basefilepath)
        and os.path.exists(output_predictions_test_filepath)
        and os.path.exists(output_predictions_all_filepath)):
-        logger.warning(f"predict: output files exist and force is False, so stop: {output_classifier_filepath}, {output_predictions_test_filepath}, {output_predictions_all_filepath}")
+        logger.warning(f"predict: output files exist and force is False, so stop: {output_classifier_basefilepath}, {output_predictions_test_filepath}, {output_predictions_all_filepath}")
         return
 
     # Read the classification data from the csv so we can pass it on to the other functione to improve performance...
