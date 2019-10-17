@@ -13,6 +13,7 @@ from string import Template
 
 import cropclassification.helpers.config_helper as conf
 import cropclassification.helpers.pandas_helper as pdh
+import cropclassification.postprocess.classification_postprocess as class_postpr
 
 #-------------------------------------------------------------
 # First define/init some general variables/constants
@@ -68,12 +69,28 @@ def write_full_report(parcel_predictions_filepath: str,
        'CONFUSION_MATRICES_DATA': empty_string,
        'CONFUSION_MATRICES_CONSOLIDATED_TABLE': empty_string,
        'CONFUSION_MATRICES_CONSOLIDATED_DATA': empty_string,
-       'PREDICTION_QUALITY_OVERVIEW_TEXT': empty_string,
-       'PREDICTION_QUALITY_OVERVIEW_TABLE': empty_string,
        'PREDICTION_QUALITY_CONS_OVERVIEW_TEXT': empty_string,
        'PREDICTION_QUALITY_CONS_OVERVIEW_TABLE': empty_string,
-       'PREDICTION_QUALITY_ALPHA_ERROR_TEXT': empty_string,
-       'PREDICTION_QUALITY_ALPHA_ERROR_TABLE': empty_string
+       'PREDICTION_QUALITY_FULL_ALPHA_OVERVIEW_TEXT': empty_string,
+       'PREDICTION_QUALITY_FULL_ALPHA_OVERVIEW_TABLE': empty_string,
+       'PREDICTION_QUALITY_ALPHA_TEXT': empty_string,
+       'PREDICTION_QUALITY_BETA_TEXT': empty_string,
+       'PREDICTION_QUALITY_ALPHA_PER_PIXCOUNT_TEXT': empty_string,
+       'PREDICTION_QUALITY_ALPHA_PER_PIXCOUNT_TABLE': empty_string,
+       'PREDICTION_QUALITY_ALPHA_PER_CLASS_TEXT': empty_string,
+       'PREDICTION_QUALITY_ALPHA_PER_CLASS_TABLE': empty_string,
+       'PREDICTION_QUALITY_ALPHA_PER_CROP_TEXT': empty_string,
+       'PREDICTION_QUALITY_ALPHA_PER_CROP_TABLE': empty_string,       
+       'PREDICTION_QUALITY_ALPHA_PER_PROBABILITY_TEXT': empty_string,
+       'PREDICTION_QUALITY_ALPHA_PER_PROBABILITY_TABLE': empty_string,
+       'PREDICTION_QUALITY_BETA_PER_PIXCOUNT_TEXT': empty_string,
+       'PREDICTION_QUALITY_BETA_PER_PIXCOUNT_TABLE': empty_string,
+       'PREDICTION_QUALITY_BETA_PER_CLASS_TEXT': empty_string,
+       'PREDICTION_QUALITY_BETA_PER_CLASS_TABLE': empty_string,
+       'PREDICTION_QUALITY_BETA_PER_CROP_TEXT': empty_string,
+       'PREDICTION_QUALITY_BETA_PER_CROP_TABLE': empty_string,       
+       'PREDICTION_QUALITY_BETA_PER_PROBABILITY_TEXT': empty_string,
+       'PREDICTION_QUALITY_BETA_PER_PROBABILITY_TABLE': empty_string
     }
     
     # Build and write report...
@@ -89,8 +106,10 @@ def write_full_report(parcel_predictions_filepath: str,
 
         logger.info(f"{dict(conf.marker)}")
         parameter_list = [['marker', key, value] for key, value in conf.marker.items()]
+        parameter_list += [['timeseries', key, value] for key, value in conf.timeseries.items()]
         parameter_list += [['preprocess', key, value] for key, value in conf.preprocess.items()]
         parameter_list += [['classifier', key, value] for key, value in conf.classifier.items()]
+        parameter_list += [['postprocess', key, value] for key, value in conf.postprocess.items()]
         
         parameters_used_df = pd.DataFrame(parameter_list, columns=['parameter_type', 'parameter', 'value'])
         with pd.option_context(*pandas_option_context_list):
@@ -98,6 +117,7 @@ def write_full_report(parcel_predictions_filepath: str,
             logger.info(f"{parameters_used_df}\n")
             html_data['PARAMETERS_USED_TABLE'] = parameters_used_df.to_html(index=False) 
               
+        outputfile.write("\n")
         outputfile.write("************************************************************\n")
         outputfile.write("**************** RECAP OF GENERAL RESULTS ******************\n")
         outputfile.write("************************************************************\n")
@@ -105,11 +125,24 @@ def write_full_report(parcel_predictions_filepath: str,
         outputfile.write("************************************************************\n")
         outputfile.write("*             GENERAL CONSOLIDATED CONCLUSIONS             *\n")
         outputfile.write("************************************************************\n")
-        # Write the conclusions for the consolidated predictions
-        message = f"Prediction conclusions cons (doubt + not_enough_pixels) overview, for {len(df_predict)} predicted cases:"
+        # Calculate + write general conclusions for consolidated prediction
+        _add_prediction_conclusion(
+                in_df=df_predict,
+                new_columnname=conf.columns['prediction_conclusion_cons'],
+                prediction_column_to_use=conf.columns['prediction_cons'],
+                detailed=False)
+
+        # Get the number of 'unimportant' ignore parcels and report them here
+        df_predict_unimportant = df_predict[df_predict[conf.columns['prediction_conclusion_cons']] == 'IGNORE_UNIMPORTANT']
+        # Now they can be removed for the rest of the reportings... 
+        df_predict = df_predict[
+                df_predict[conf.columns['prediction_conclusion_cons']] != 'IGNORE_UNIMPORTANT']
+
+        message = (f"Prediction conclusions cons general overview, for {len(df_predict.index)} predicted cases."
+                   + f"The {len(df_predict_unimportant.index)} IGNORE_UNIMPORTANT parcels are excluded from the reporting!")
         outputfile.write(f"\n{message}\n")
         html_data['GENERAL_PREDICTION_CONCLUSION_CONS_OVERVIEW_TEXT'] = message
-        
+                
         count_per_class = (df_predict.groupby(conf.columns['prediction_conclusion_cons'], as_index=False)
                            .size().to_frame('count'))
         values = 100*count_per_class['count']/count_per_class['count'].sum()
@@ -122,61 +155,77 @@ def write_full_report(parcel_predictions_filepath: str,
             html_data['GENERAL_PREDICTION_CONCLUSION_CONS_OVERVIEW_DATA'] = count_per_class.to_dict()
 
         # Output general accuracies
+        outputfile.write("\n")
         outputfile.write("************************************************************\n")
         outputfile.write("*                   OVERALL ACCURACIES                     *\n")
         outputfile.write("************************************************************\n")
         overall_accuracies_list = []
 
         # Calculate overall accuracies for all parcels
-        oa = skmetrics.accuracy_score(df_predict[conf.columns['class']],
-                                      df_predict[conf.columns['prediction']],
-                                      normalize=True,
-                                      sample_weight=None) * 100
-        overall_accuracies_list.append({'parcels': 'All', 'prediction_type': 'standard', 'accuracy': oa})
+        try:
+            oa = skmetrics.accuracy_score(
+                    df_predict[conf.columns['class']], df_predict['pred1'],
+                    normalize=True, sample_weight=None) * 100
+            overall_accuracies_list.append(
+                    {'parcels': 'All', 'prediction_type': 'standard', 'accuracy': oa})
 
-        oa = skmetrics.accuracy_score(df_predict[conf.columns['class']],
-                                      df_predict[conf.columns['prediction_cons']],
-                                      normalize=True,
-                                      sample_weight=None) * 100
-        overall_accuracies_list.append({'parcels': 'All', 'prediction_type': 'consolidated', 'accuracy': oa})
+            oa = skmetrics.accuracy_score(
+                    df_predict[conf.columns['class']], df_predict[conf.columns['prediction_cons']],
+                    normalize=True, sample_weight=None) * 100
+            overall_accuracies_list.append(
+                    {'parcels': 'All', 'prediction_type': 'consolidated', 'accuracy': oa})
+        except:
+            logger.exception("Error calculating overall accuracies!")
 
         # Calculate while ignoring the classes to be ignored...
-        df_predict_accuracy_no_ignore = df_predict[~df_predict[conf.columns['class']].isin(conf.marker.getlist('classes_to_ignore_for_train'))]
-        df_predict_accuracy_no_ignore = df_predict_accuracy_no_ignore[~df_predict_accuracy_no_ignore[conf.columns['class']].isin(conf.marker.getlist('classes_to_ignore'))]
+        df_predict_accuracy_no_ignore = df_predict[
+                ~df_predict[conf.columns['class']].isin(conf.marker.getlist('classes_to_ignore_for_train'))]
+        df_predict_accuracy_no_ignore = df_predict_accuracy_no_ignore[
+                ~df_predict_accuracy_no_ignore[conf.columns['class']].isin(conf.marker.getlist('classes_to_ignore'))]
         
-        oa = skmetrics.accuracy_score(df_predict_accuracy_no_ignore[conf.columns['class']],
-                                      df_predict_accuracy_no_ignore[conf.columns['prediction']],
-                                      normalize=True,
-                                      sample_weight=None) * 100
-        overall_accuracies_list.append({'parcels': 'Exclude classes_to_ignore(_for_train) classes', 'prediction_type': 'standard', 'accuracy': oa})
+        oa = skmetrics.accuracy_score(
+                df_predict_accuracy_no_ignore[conf.columns['class']], 
+                df_predict_accuracy_no_ignore['pred1'],
+                normalize=True, sample_weight=None) * 100
+        overall_accuracies_list.append(
+                {'parcels': 'Exclude classes_to_ignore(_for_train) classes', 
+                 'prediction_type': 'standard', 'accuracy': oa})
 
-        oa = skmetrics.accuracy_score(df_predict_accuracy_no_ignore[conf.columns['class']],
-                                      df_predict_accuracy_no_ignore[conf.columns['prediction_cons']],
-                                      normalize=True,
-                                      sample_weight=None) * 100
-        overall_accuracies_list.append({'parcels': 'Exclude classes_to_ignore(_for_train) classes', 'prediction_type': 'consolidated', 'accuracy': oa})
+        oa = skmetrics.accuracy_score(
+                df_predict_accuracy_no_ignore[conf.columns['class']],
+                df_predict_accuracy_no_ignore[conf.columns['prediction_cons']],
+                normalize=True, sample_weight=None) * 100
+        overall_accuracies_list.append(
+                {'parcels': 'Exclude classes_to_ignore(_for_train) classes', 
+                 'prediction_type': 'consolidated', 'accuracy': oa})
 
         # Calculate ignoring both classes to ignored + parcels not having a valid prediction
-        df_predict_no_ignore_has_prediction = df_predict_accuracy_no_ignore.loc[(df_predict_accuracy_no_ignore[conf.columns['prediction_status']] != 'NODATA')
-                                                   & (df_predict_accuracy_no_ignore[conf.columns['prediction_status']] != 'NOT_ENOUGH_PIXELS')]
-        oa = skmetrics.accuracy_score(df_predict_no_ignore_has_prediction[conf.columns['class']],
-                                      df_predict_no_ignore_has_prediction[conf.columns['prediction']],
-                                      normalize=True,
-                                      sample_weight=None) * 100
-        overall_accuracies_list.append({'parcels': 'Exclude ignored ones + with prediction (= excl. NODATA, NOT_ENOUGH_PIXELS)', 'prediction_type': 'standard', 'accuracy': oa})
+        df_predict_no_ignore_has_prediction = df_predict_accuracy_no_ignore.loc[
+                (df_predict_accuracy_no_ignore[conf.columns['prediction_cons']] != 'NODATA')
+                   & (df_predict_accuracy_no_ignore[conf.columns['prediction_cons']] != 'DOUBT:NOT_ENOUGH_PIXELS')]
+        oa = skmetrics.accuracy_score(
+                df_predict_no_ignore_has_prediction[conf.columns['class']],
+                df_predict_no_ignore_has_prediction['pred1'],
+                normalize=True, sample_weight=None) * 100
+        overall_accuracies_list.append(
+                {'parcels': 'Exclude ignored ones + with prediction (= excl. NODATA, NOT_ENOUGH_PIXELS)', 
+                 'prediction_type': 'standard', 'accuracy': oa})
 
-        oa = skmetrics.accuracy_score(df_predict_no_ignore_has_prediction[conf.columns['class']],
-                                      df_predict_no_ignore_has_prediction[conf.columns['prediction_cons']],
-                                      normalize=True,
-                                      sample_weight=None) * 100
-        overall_accuracies_list.append({'parcels': 'Exclude ignored ones + with prediction (= excl. NODATA, NOT_ENOUGH_PIXELS)', 'prediction_type': 'consolidated', 'accuracy': oa})
+        oa = skmetrics.accuracy_score(
+                df_predict_no_ignore_has_prediction[conf.columns['class']],
+                df_predict_no_ignore_has_prediction[conf.columns['prediction_cons']],
+                normalize=True, sample_weight=None) * 100
+        overall_accuracies_list.append(
+                {'parcels': 'Exclude ignored ones + with prediction (= excl. NODATA, NOT_ENOUGH_PIXELS)', 
+                 'prediction_type': 'consolidated', 'accuracy': oa})
 
         # Output the resulting overall accuracies
         message = 'Overall accuracies for different sub-groups of the data'
         outputfile.write(f"\n{message}\n")
         html_data['OVERALL_ACCURACIES_TEXT'] = message
 
-        overall_accuracies_df = pd.DataFrame(overall_accuracies_list, columns=['parcels', 'prediction_type', 'accuracy'])
+        overall_accuracies_df = pd.DataFrame(overall_accuracies_list, 
+                                             columns=['parcels', 'prediction_type', 'accuracy'])
         overall_accuracies_df.set_index(keys=['parcels', 'prediction_type'], inplace=True)
         with pd.option_context(*pandas_option_context_list):
             outputfile.write(f"\n{overall_accuracies_df}\n")
@@ -184,10 +233,10 @@ def write_full_report(parcel_predictions_filepath: str,
             html_data['OVERALL_ACCURACIES_TABLE'] = overall_accuracies_df.to_html()        
 
         # Write the recall, F1 score,... per class
-#        message = skmetrics.classification_report(df_predict[gs.class_column]
-#                                                        , df_predict[gs.prediction_column]
-#                                                        , labels=classes)
-#        outputfile.write(message)
+        #message = skmetrics.classification_report(df_predict[gs.class_column]
+        #                                                , df_predict[gs.prediction_column]
+        #                                                , labels=classes)
+        #outputfile.write(message)
 
         outputfile.write("************************************************************\n")
         outputfile.write("********************* DETAILED RESULTS *********************\n")
@@ -197,37 +246,16 @@ def write_full_report(parcel_predictions_filepath: str,
         outputfile.write("*             DETAILED PREDICTION CONCLUSIONS              *\n")
         outputfile.write("************************************************************\n")
 
-        # Write the conclusions for the standard predictions
-        message = f"Prediction conclusions overview, for {len(df_predict)} predicted cases:"
-        outputfile.write(f"\n{message}\n")
-        html_data['PREDICTION_CONCLUSION_DETAIL_OVERVIEW_TEXT'] = message
-        
-        count_per_class = (df_predict.groupby(conf.columns['prediction_conclusion_detail'], as_index=False)
-                            .size().to_frame('count'))
-        values = 100*count_per_class['count']/count_per_class['count'].sum()
-        count_per_class.insert(loc=1, column='pct', value=values)
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-            outputfile.write(f"\n{count_per_class}\n")
-            logger.info(f"{count_per_class}\n")
-            html_data['PREDICTION_CONCLUSION_DETAIL_OVERVIEW_TABLE'] = count_per_class.to_html()
-
-        # Write the conclusions for the withdoubt predictions
-        message = f"Prediction conclusions with doubt overview, for {len(df_predict)} predicted cases:"
-        outputfile.write(f"\n{message}\n")
-        html_data['PREDICTION_CONCLUSION_DETAIL_WITHDOUBT_OVERVIEW_TEXT'] = message
-        
-        count_per_class = (df_predict.groupby(conf.columns['prediction_conclusion_detail_withdoubt'], as_index=False)
-                            .size().to_frame('count'))
-        values = 100*count_per_class['count']/count_per_class['count'].sum()
-        count_per_class.insert(loc=1, column='pct', value=values)
-        
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None):                                
-            outputfile.write(f"\n{count_per_class}\n")
-            logger.info(f"{count_per_class}\n")
-            html_data['PREDICTION_CONCLUSION_DETAIL_WITHDOUBT_OVERVIEW_TABLE'] = count_per_class.to_html()
+        # Calculate detailed conclusions for the predictions
+        logger.info("Calculate the detailed conclusions for the predictions")
 
         # Write the conclusions for the consolidated predictions
-        message = f"Prediction conclusions cons (doubt + not_enough_pixels) overview, for {len(df_predict)} predicted cases:"
+        _add_prediction_conclusion(
+                in_df=df_predict,
+                new_columnname=conf.columns['prediction_conclusion_detail_cons'],
+                prediction_column_to_use=conf.columns['prediction_cons'],
+                detailed=True)
+        message = f"Prediction conclusions cons (doubt + not_enough_pixels) overview, for {len(df_predict.index)} predicted cases:"
         outputfile.write(f"\n{message}\n")
         html_data['PREDICTION_CONCLUSION_DETAIL_CONS_OVERVIEW_TEXT'] = message
         
@@ -241,12 +269,36 @@ def write_full_report(parcel_predictions_filepath: str,
             logger.info(f"{count_per_class}\n")
             html_data['PREDICTION_CONCLUSION_DETAIL_CONS_OVERVIEW_TABLE'] = count_per_class.to_html()
 
+        # Calculate detailed conclusions for the predictions
+        logger.info("Calculate the detailed conclusions for the predictions")
+
+        # Write the conclusions for the consolidated predictions
+        _add_prediction_conclusion(
+                in_df=df_predict,
+                new_columnname=conf.columns['prediction_conclusion_detail_full_alpha'],
+                prediction_column_to_use=conf.columns['prediction_full_alpha'],
+                detailed=True)
+        message = f"Prediction conclusions full alpha (doubt + not_enough_pixels) overview, for {len(df_predict.index)} predicted cases:"
+        outputfile.write(f"\n{message}\n")
+        html_data['PREDICTION_CONCLUSION_DETAIL_FULL_ALPHA_OVERVIEW_TEXT'] = message
+        
+        count_per_class = (df_predict.groupby(conf.columns['prediction_conclusion_detail_full_alpha'], as_index=False)
+                            .size().to_frame('count'))
+        values = 100*count_per_class['count']/count_per_class['count'].sum()
+        count_per_class.insert(loc=1, column='pct', value=values)
+        
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):                                
+            outputfile.write(f"\n{count_per_class}\n")
+            logger.info(f"{count_per_class}\n")
+            html_data['PREDICTION_CONCLUSION_DETAIL_FULL_ALPHA_OVERVIEW_TABLE'] = count_per_class.to_html()
+
+        outputfile.write("\n")
         outputfile.write("************************************************************\n")
         outputfile.write("*     CONFUSION MATRICES FOR PARCELS WITH PREDICTIONS      *\n")
         outputfile.write("************************************************************\n")
         # Calculate an extended confusion matrix with the standard prediction column and write
         # it to output...
-        df_confmatrix_ext = _get_confusion_matrix_ext(df_predict, conf.columns['prediction'])
+        df_confmatrix_ext = _get_confusion_matrix_ext(df_predict, 'pred1')
         outputfile.write("\nExtended confusion matrix of the predictions: Rows: true/input classes, columns: predicted classes\n")
         with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):
             outputfile.write(f"{df_confmatrix_ext}\n")
@@ -281,117 +333,27 @@ def write_full_report(parcel_predictions_filepath: str,
             df_parcel_gt.set_index(conf.columns['id'], inplace=True)
             logger.info(f"Read csv with ground truth ready, shape: {df_parcel_gt.shape}")
 
-            # Rename the classname column in ground truth
-            df_parcel_gt.rename(columns={conf.columns['class']: conf.columns['class'] + '_GT'},
-			                    inplace=True)
-
             # Join the prediction data
             cols_to_join = df_predict.columns.difference(df_parcel_gt.columns)
-            df_parcel_gt = df_parcel_gt.join(df_predict[cols_to_join], how='inner')
+            df_parcel_gt = df_predict[cols_to_join].join(df_parcel_gt, how='inner')
             logger.info(f"After join of ground truth with predictions, shape: {df_parcel_gt.shape}")
 
-            if len(df_parcel_gt) == 0:
+            if len(df_parcel_gt.index) == 0:
                 message = "After join of ground truth with predictions the result was empty, so probably a wrong ground truth file was used!"
                 logger.critical(message)
                 raise Exception(message)
 
-            # Add the alfa error
-            # TODO: this needs to be reviewed, maybe need to compare with original classname
-            #       instead of _IGNORE, UNKNOWN,...
-            # TODO: rewrite using native pandas commands to improve performance
-            def get_prediction_quality(row, prediction_column_to_use) -> str:
-                """ Get a string that gives a quality indicator of the prediction. """
-                # For some reason the row['pred2_prob'] is sometimes seen as string, and
-                # so 2* gives a repetition of the string value instead
-                # of a mathematic multiplication... so cast to float!
-
-                if row[conf.columns['class']] == row[conf.columns['class'] + '_GT']:
-                    # Farmer did a correct application
-                    if row[conf.columns['class'] + '_GT'] == row[prediction_column_to_use]:
-                        # Prediction was the same as the ground truth, so correct!
-                        return 'OK_EVERYTHING_CORRECT'
-                    elif (row[conf.columns['class']] in conf.marker.getlist('classes_to_ignore_for_train')
-                          or row[conf.columns['class']] in conf.marker.getlist('classes_to_ignore')):
-                        # Input classname was special
-                        return f"IGNORE_CLASSNAME={row[conf.columns['class']]}"
-                    elif row[prediction_column_to_use] in ['DOUBT', 'NODATA', 'NOT_ENOUGH_PIXELS']:
-                        # Prediction resulted in doubt or there was no/not enough data
-                        return f"DOUBT_REASON={row[prediction_column_to_use]}"
-                    else:
-                        # Prediction was wrong, and opposes the farmer!
-                        return 'ERROR_ALFA'
-                else:
-                    # Farmer did an incorrect application
-                    if row[conf.columns['class'] + '_GT'] == row[prediction_column_to_use]:
-                        # Prediction was the same as the ground truth, so correct!
-                        return 'OK_FARMER_WRONG_PREDICTION_CORRECT'
-                    elif row[conf.columns['class']] == row[prediction_column_to_use]:
-                        # Prediction was wrong, but same as the farmer!
-                        return 'ERROR_BETA_FARMER_WRONG_PREDICTION_DIDNT_OPPOSE'
-                    elif (row[conf.columns['class']] in conf.marker.getlist('classes_to_ignore_for_train')
-                          or row[conf.columns['class']] in conf.marker.getlist('classes_to_ignore')):
-                        # Input classname was special
-                        return f"ERROR_BETA_FARMER_WRONG_CLASSNAME={row[conf.columns['class']]}"
-                    elif row[prediction_column_to_use] in ['DOUBT', 'NODATA', 'NOT_ENOUGH_PIXELS']:
-                        # Prediction resulted in doubt or there was no/not enough data
-                        return f"DOUBT_PRED={row[prediction_column_to_use]}"
-                    else:
-                        # Prediction was wrong, but same as the farmer!
-                        return 'OK_FARMER_WRONG_PREDICTION_DIFFERENT'
-
-#            df_parcel_gt[f"prediction_quality_{conf.columns['prediction']}"] = df_parcel_gt.apply(get_prediction_quality
-#                                                                   , args=[gs.prediction_cons_column]
-#                                                                   , axis=1).tolist()
-            # Calculate quality of standard prediction
-            values = df_parcel_gt.apply(get_prediction_quality, args=[conf.columns['prediction']], axis=1)
-            df_parcel_gt.insert(loc=2, column=f"prediction_quality_{conf.columns['prediction']}", value=values)
-
-            # Calculate quality of prediction with doubt
-            values = df_parcel_gt.apply(get_prediction_quality, args=[conf.columns['prediction_withdoubt']], axis=1)
-            df_parcel_gt.insert(loc=2, column=f"prediction_quality_{conf.columns['prediction_withdoubt']}", value=values)
-
-            # Calculate quality of consolidated prediction
-            values = df_parcel_gt.apply(get_prediction_quality, args=[conf.columns['prediction_cons']], axis=1)
-            df_parcel_gt.insert(loc=2, column=f"prediction_quality_{conf.columns['prediction_cons']}", value=values)
-            
-            # Write the rough data to file
-            pdh.to_file(df_parcel_gt, output_report_txt + "_groundtruth_pred_quality_details.tsv")
-
-            # Write the result for the standard predictions
-            message = f"Prediction quality overview, for {len(df_parcel_gt)} predicted cases in ground truth:"
-            outputfile.write(f"\n{message}\n")
-            html_data['PREDICTION_QUALITY_OVERVIEW_TEXT'] = message
-            
-            count_per_class = (df_parcel_gt.groupby(f"prediction_quality_{conf.columns['prediction']}", as_index=False)
-                               .size().to_frame('count'))
-            values = 100*count_per_class['count']/count_per_class['count'].sum()
-            count_per_class.insert(loc=1, column='pct', value=values)
-            with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-                outputfile.write(f"\n{count_per_class}\n")
-                logger.info(f"{count_per_class}\n")
-                html_data['PREDICTION_QUALITY_OVERVIEW_TABLE'] = count_per_class.to_html()
-
-            # Write the result for the withdoubt predictions
-            message = f"Prediction quality with doubt overview, for {len(df_parcel_gt)} predicted cases in ground truth:"
-            outputfile.write(f"\n{message}\n")
-            html_data['PREDICTION_QUALITY_WITHDOUBT_OVERVIEW_TEXT'] = message
-            
-            count_per_class = (df_parcel_gt.groupby(f"prediction_quality_{conf.columns['prediction_withdoubt']}", as_index=False)
-                               .size().to_frame('count'))
-            values = 100*count_per_class['count']/count_per_class['count'].sum()
-            count_per_class.insert(loc=1, column='pct', value=values)
-            
-            with pd.option_context('display.max_rows', None, 'display.max_columns', None):                                
-                outputfile.write(f"\n{count_per_class}\n")
-                logger.info(f"{count_per_class}\n")
-                html_data['PREDICTION_QUALITY_WITHDOUBT_OVERVIEW_TABLE'] = count_per_class.to_html()
-
-            # Write the result for the consolidated predictions
-            message = f"Prediction quality cons (doubt + not_enough_pixels) overview, for {len(df_parcel_gt)} predicted cases in ground truth:"
+            # General ground truth statistics
+            # ******************************************************************
+            # Calculate the conclusions based on ground truth
+           
+            # Calculate and write the result for the consolidated predictions
+            _add_gt_conclusions(df_parcel_gt, conf.columns['prediction_cons'])
+            message = f"Prediction quality cons (doubt + not_enough_pixels) overview, for {len(df_parcel_gt.index)} predicted cases in ground truth:"
             outputfile.write(f"\n{message}\n")
             html_data['PREDICTION_QUALITY_CONS_OVERVIEW_TEXT'] = message
             
-            count_per_class = (df_parcel_gt.groupby(f"prediction_quality_{conf.columns['prediction_cons']}", as_index=False)
+            count_per_class = (df_parcel_gt.groupby(f"gt_conclusion_{conf.columns['prediction_cons']}", as_index=False)
                                .size().to_frame('count'))
             values = 100*count_per_class['count']/count_per_class['count'].sum()
             count_per_class.insert(loc=1, column='pct', value=values)
@@ -401,20 +363,303 @@ def write_full_report(parcel_predictions_filepath: str,
                 logger.info(f"{count_per_class}\n")
                 html_data['PREDICTION_QUALITY_CONS_OVERVIEW_TABLE'] = count_per_class.to_html()
 
+            # Calculate and write the result for the consolidated predictions
+            _add_gt_conclusions(df_parcel_gt, conf.columns['prediction_full_alpha'])
+            message = f"Prediction quality cons (doubt + not_enough_pixels) overview, for {len(df_parcel_gt.index)} predicted cases in ground truth:"
+            outputfile.write(f"\n{message}\n")
+            html_data['PREDICTION_QUALITY_FULL_ALPHA_OVERVIEW_TEXT'] = message
+            
+            count_per_class = (df_parcel_gt.groupby(f"gt_conclusion_{conf.columns['prediction_full_alpha']}", as_index=False)
+                               .size().to_frame('count'))
+            values = 100*count_per_class['count']/count_per_class['count'].sum()
+            count_per_class.insert(loc=1, column='pct', value=values)
+            
+            with pd.option_context('display.max_rows', None, 'display.max_columns', None):                                
+                outputfile.write(f"\n{count_per_class}\n")
+                logger.info(f"{count_per_class}\n")
+                html_data['PREDICTION_QUALITY_FULL_ALPHA_OVERVIEW_TABLE'] = count_per_class.to_html()
+
+            # Write the ground truth conclusions to file
+            pdh.to_file(df_parcel_gt, output_report_txt + "_groundtruth_pred_quality_details.tsv")
+
+            # Alpha and beta error statistics based on CONS prediction
+            # ******************************************************************            
+            # Pct Alpha errors=alpha errors/(alpha errors + real errors)  
+            columnname = f"gt_conclusion_{conf.columns['prediction_cons']}"
+            alpha_numerator = len(df_parcel_gt.loc[df_parcel_gt[columnname] == 'FARMER-CORRECT_PRED-WRONG:ERROR_ALPHA'].index)
+            alpha_denominator = (alpha_numerator 
+                    + len(df_parcel_gt.loc[df_parcel_gt[columnname].isin(
+                            ['FARMER-WRONG_PRED-CORRECT', 'FARMER-WRONG_PRED-WRONG'])].index))
+            if alpha_denominator > 0:
+                message = (f"Alpha error for cons: {alpha_numerator}/{alpha_denominator} = "
+                        + f"{(alpha_numerator/alpha_denominator):.02f}")
+            else:
+                message = f"Alpha error for cons: {alpha_numerator}/{alpha_denominator} = ?"
+
+            outputfile.write(f"\n{message}\n")
+            html_data['PREDICTION_QUALITY_ALPHA_TEXT'] = message
+
+            beta_numerator = len(df_parcel_gt.loc[df_parcel_gt[columnname] == 'FARMER-WRONG_PRED-DOESNT_OPPOSE:ERROR_BETA'].index)
+            beta_denominator = (beta_numerator 
+                    + len(df_parcel_gt.loc[df_parcel_gt[columnname].str.startswith('FARMER-WRONG_PRED-')].index))
+            if beta_denominator > 0:
+                message = (f"Beta error for cons: {beta_numerator}/{beta_denominator} = "
+                           + f"{(beta_numerator/beta_denominator):.02f}")
+            else:
+                message = f"Beta error for cons: {beta_numerator}/{beta_denominator} = ?"
+
+            outputfile.write(f"\n{message}\n")
+            html_data['PREDICTION_QUALITY_BETA_TEXT'] = message
+
+            # Alpha and beta error statistics based on CONS prediction
+            # ******************************************************************            
+            # Pct ALPHA errors=alpha errors/(alpha errors + real errors)
+            alpha_numerator_columns = ['FARMER-CORRECT_PRED-WRONG:ERROR_ALPHA']
+            alpha_denominator_columns = ['FARMER-CORRECT_PRED-WRONG:ERROR_ALPHA', 
+                                         'FARMER-WRONG_PRED-CORRECT', 'FARMER-WRONG_PRED-WRONG']
+            columnname = f"gt_conclusion_{conf.columns['prediction_full_alpha']}"
+            alpha_numerator = len(
+                    df_parcel_gt.loc[df_parcel_gt[columnname].isin(alpha_numerator_columns)].index)
+            alpha_denominator = len(
+                    df_parcel_gt.loc[df_parcel_gt[columnname].isin(alpha_denominator_columns)].index)
+            if alpha_denominator > 0:
+                message = (f"Alpha error full: {alpha_numerator}/{alpha_denominator} = "
+                        + f"{(alpha_numerator/alpha_denominator):.02f}")
+            else:
+                message = f"Alpha error full: {alpha_numerator}/{alpha_denominator} = ?"
+
+            outputfile.write(f"\n{message}\n")
+            html_data['PREDICTION_QUALITY_ALPHA_TEXT'] += '<br/>' + message
+
+            # Pct BETA errors=beta errors/(beta errors + real wrong farmer declarations)
+            beta_numerator_columns = ['FARMER-WRONG_PRED-DOESNT_OPPOSE:ERROR_BETA']
+            beta_denominator_columns = df_parcel_gt[columnname].loc[
+                    df_parcel_gt[columnname].str.startswith('FARMER-WRONG_PRED-')].unique()
+            beta_numerator = len(
+                    df_parcel_gt.loc[df_parcel_gt[columnname].isin(beta_numerator_columns)].index)
+            beta_denominator = len(
+                    df_parcel_gt.loc[df_parcel_gt[columnname].isin(beta_denominator_columns)].index)
+            if beta_denominator > 0:
+                message = (f"Beta error full: {beta_numerator}/{beta_denominator} = "
+                           + f"{(beta_numerator/beta_denominator):.02f}")
+            else:
+                message = f"Beta error full: {beta_numerator}/{beta_denominator} = ?"
+
+            outputfile.write(f"\n{message}\n")
+            html_data['PREDICTION_QUALITY_BETA_TEXT'] += '<br/>' + message
+
+            # Some more detailed reports for alpha and beta errors
+            # ******************************************************************            
+            
             # If the pixcount is available, write the number of ALFA errors per pixcount (for the prediction with doubt)
+            pred_quality_full_doubt_column = f"gt_conclusion_{conf.columns['prediction_full_alpha']}"
             if conf.columns['pixcount_s1s2'] in df_parcel_gt.columns:
-                # Get data, drop empty lines and write
-                message = f"Number of ERROR_ALFA parcels for the 'prediction with doubt' per pixcount for the ground truth parcels:"
+                # ALPHA errors 
+                message = f"Number of ERROR_ALFA parcels per pixcount for the ground truth parcels without applying doubt based on pixcount:"
                 outputfile.write(f"\n{message}\n")            
-                html_data['PREDICTION_QUALITY_ALPHA_ERROR_TEXT'] = message
+                html_data['PREDICTION_QUALITY_ALPHA_PER_PIXCOUNT_TEXT'] = message
+
+                # For pixcount report, use error conclusions without min_nb_pixels
+                class_postpr.add_doubt_column(
+                        pred_df=df_parcel_gt, 
+                        new_pred_column='pred_cons_no_min_pix',
+                        apply_doubt_pct_proba=True,
+                        apply_doubt_min_nb_pixels=False,
+                        apply_doubt_marker_specific=True)
+                _add_gt_conclusions(df_parcel_gt, 'pred_cons_no_min_pix')
                 
-                df_per_pixcount = _get_alfa_errors_per_pixcount(df_parcel_gt)
-                df_per_pixcount.dropna(inplace=True)
+                # Calc data and write
+                pred_quality_column = "gt_conclusion_" + "pred_cons_no_min_pix"
+                df_per_column = _get_errors_per_column(
+                        groupbycolumn=conf.columns['pixcount_s1s2'],
+                        df_predquality=df_parcel_gt,
+                        pred_quality_column=pred_quality_column,
+                        pred_quality_full_doubt_column=pred_quality_full_doubt_column,
+                        error_codes_numerator=alpha_numerator_columns,
+                        error_codes_denominator=alpha_denominator_columns)
+                #df_per_column.dropna(inplace=True)
                 with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):                    
-                    outputfile.write(f"\n{df_per_pixcount}\n")
-                    logger.info(f"{df_per_pixcount}\n")
-                    html_data['PREDICTION_QUALITY_ALPHA_ERROR_TABLE'] = df_per_pixcount.to_html()
-                        
+                    outputfile.write(f"\n{df_per_column}\n")
+                    logger.info(f"{df_per_column}\n")
+                    html_data['PREDICTION_QUALITY_ALPHA_PER_PIXCOUNT_TABLE'] = df_per_column.to_html()
+
+                # BETA errors 
+                message = f"Number of ERROR_BETA parcels per pixcount for the ground truth parcels without applying doubt based on pixcount:"
+                outputfile.write(f"\n{message}\n")            
+                html_data['PREDICTION_QUALITY_BETA_PER_PIXCOUNT_TEXT'] = message
+                
+                # Calc data and write
+                pred_quality_column = "gt_conclusion_" + "pred_cons_no_min_pix"
+                df_per_column = _get_errors_per_column(
+                        groupbycolumn=conf.columns['pixcount_s1s2'],
+                        df_predquality=df_parcel_gt,
+                        pred_quality_column=pred_quality_column,
+                        pred_quality_full_doubt_column=pred_quality_full_doubt_column,
+                        error_codes_numerator=beta_numerator_columns,
+                        error_codes_denominator=beta_denominator_columns)
+                #df_per_column.dropna(inplace=True)
+                with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):                    
+                    outputfile.write(f"\n{df_per_column}\n")
+                    logger.info(f"{df_per_column}\n")
+                    html_data['PREDICTION_QUALITY_BETA_PER_PIXCOUNT_TABLE'] = df_per_column.to_html()
+                    
+            # If cropclass is available, write the number of ALFA errors per cropclass (for the prediction with doubt)
+            if conf.columns['class_declared'] in df_parcel_gt.columns:
+                # ALPHA errors 
+                message = f"Number of ERROR_ALFA parcels per declared cropclass for the ground truth parcels without applying crop/class based doubt:"
+                outputfile.write(f"\n{message}\n")            
+                html_data['PREDICTION_QUALITY_ALPHA_PER_CLASS_TEXT'] = message
+
+                # For class report, use error conclusions without marker specific stuff
+                class_postpr.add_doubt_column(
+                        pred_df=df_parcel_gt, 
+                        new_pred_column='pred_cons_no_marker_specific',
+                        apply_doubt_pct_proba=True,
+                        apply_doubt_min_nb_pixels=True,
+                        apply_doubt_marker_specific=False)
+                _add_gt_conclusions(df_parcel_gt, 'pred_cons_no_marker_specific')
+
+                # Calc data and write
+                pred_quality_column = "gt_conclusion_pred_cons_no_marker_specific"
+                df_per_column = _get_errors_per_column(
+                        groupbycolumn=conf.columns['class_declared'],
+                        df_predquality=df_parcel_gt,
+                        pred_quality_column=pred_quality_column,
+                        pred_quality_full_doubt_column=pred_quality_full_doubt_column,
+                        error_codes_numerator=alpha_numerator_columns,
+                        error_codes_denominator=alpha_denominator_columns)
+                #df_per_column.dropna(inplace=True)
+                with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):                    
+                    outputfile.write(f"\n{df_per_column}\n")
+                    logger.info(f"{df_per_column}\n")
+                    html_data['PREDICTION_QUALITY_ALPHA_PER_CLASS_TABLE'] = df_per_column.to_html()
+                
+                # BETA errors 
+                message = f"Number of ERROR_BETA parcels per declared cropclass for the ground truth parcels without applying crop/class based doubt:"
+                outputfile.write(f"\n{message}\n")            
+                html_data['PREDICTION_QUALITY_BETA_PER_CLASS_TEXT'] = message
+
+                # Calc data and write
+                pred_quality_column = "gt_conclusion_pred_cons_no_marker_specific"
+                df_per_column = _get_errors_per_column(
+                        groupbycolumn=conf.columns['class_declared'],
+                        df_predquality=df_parcel_gt,
+                        pred_quality_column=pred_quality_column,
+                        pred_quality_full_doubt_column=pred_quality_full_doubt_column,
+                        error_codes_numerator=beta_numerator_columns,
+                        error_codes_denominator=beta_denominator_columns)
+                #df_per_column.dropna(inplace=True)
+                with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):                    
+                    outputfile.write(f"\n{df_per_column}\n")
+                    logger.info(f"{df_per_column}\n")
+                    html_data['PREDICTION_QUALITY_BETA_PER_CLASS_TABLE'] = df_per_column.to_html()
+
+            # If crop is available, write the number of ALFA errors per cropclass (for the prediction with doubt)
+            if conf.columns['crop_declared'] in df_parcel_gt.columns:
+                # ALPHA errors 
+                message = f"Number of ERROR_ALPHA parcels per declared crop for the ground truth parcels, without applying marker specific doubt:"
+                outputfile.write(f"\n{message}\n")            
+                html_data['PREDICTION_QUALITY_ALPHA_PER_CROP_TEXT'] = message
+
+                # For crop report, use error conclusions without marker specific stuff
+                class_postpr.add_doubt_column(
+                        pred_df=df_parcel_gt, 
+                        new_pred_column='pred_cons_no_marker_specific',
+                        apply_doubt_pct_proba=True,
+                        apply_doubt_min_nb_pixels=True,
+                        apply_doubt_marker_specific=False)
+                _add_gt_conclusions(df_parcel_gt, 'pred_cons_no_marker_specific')
+
+                # Calc data and write
+                pred_quality_column = "gt_conclusion_pred_cons_no_marker_specific"
+                df_per_column = _get_errors_per_column(
+                        groupbycolumn=conf.columns['crop_declared'],
+                        df_predquality=df_parcel_gt,
+                        pred_quality_column=pred_quality_column,
+                        pred_quality_full_doubt_column=pred_quality_full_doubt_column,
+                        error_codes_numerator=alpha_numerator_columns,
+                        error_codes_denominator=alpha_denominator_columns)
+                #df_per_column.dropna(inplace=True)
+                with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):                    
+                    outputfile.write(f"\n{df_per_column}\n")
+                    logger.info(f"{df_per_column}\n")
+                    html_data['PREDICTION_QUALITY_ALPHA_PER_CROP_TABLE'] = df_per_column.to_html()
+
+                # BETA errors 
+                message = f"Number of ERROR_BETA parcels per declared crop for the ground truth parcels, without applying marker specific doubt:"
+                outputfile.write(f"\n{message}\n")            
+                html_data['PREDICTION_QUALITY_BETA_PER_CROP_TEXT'] = message
+
+                # Calc data and write
+                pred_quality_column = "gt_conclusion_pred_cons_no_marker_specific"
+                df_per_column = _get_errors_per_column(
+                        groupbycolumn=conf.columns['crop_declared'],
+                        df_predquality=df_parcel_gt,
+                        pred_quality_column=pred_quality_column,
+                        pred_quality_full_doubt_column=pred_quality_full_doubt_column,
+                        error_codes_numerator=beta_numerator_columns,
+                        error_codes_denominator=beta_denominator_columns)
+                #df_per_column.dropna(inplace=True)
+                with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):                    
+                    outputfile.write(f"\n{df_per_column}\n")
+                    logger.info(f"{df_per_column}\n")
+                    html_data['PREDICTION_QUALITY_BETA_PER_CROP_TABLE'] = df_per_column.to_html()
+
+            # If probability is available, write the number of ALFA errors per probability (for the prediction with doubt)
+            if 'pred1_prob' in df_parcel_gt.columns:
+                # ALPHA errors 
+                message = f"Number of ERROR_ALFA parcels per % probability for the ground truth parcels, without doubt based on probability:"
+                outputfile.write(f"\n{message}\n")            
+                html_data['PREDICTION_QUALITY_ALPHA_PER_PROBABILITY_TEXT'] = message
+
+                # For pixcount report, use error conclusions without doubt reasons
+                # that use the pct probability + round the probabilities
+                class_postpr.add_doubt_column(
+                        pred_df=df_parcel_gt, 
+                        new_pred_column='pred_cons_no_pct_prob',
+                        apply_doubt_pct_proba=False,
+                        apply_doubt_min_nb_pixels=True,
+                        apply_doubt_marker_specific=True)
+                _add_gt_conclusions(df_parcel_gt, 'pred_cons_no_pct_prob')
+                df_parcel_gt['pred1_prob_rounded'] = df_parcel_gt['pred1_prob'].round(2)
+
+                # Calc data and write
+                pred_quality_column = "gt_conclusion_" + "pred_cons_no_pct_prob"
+                df_per_column = _get_errors_per_column(
+                        groupbycolumn='pred1_prob_rounded',
+                        df_predquality=df_parcel_gt,
+                        pred_quality_column=pred_quality_column,
+                        pred_quality_full_doubt_column=pred_quality_full_doubt_column,
+                        error_codes_numerator=alpha_numerator_columns,
+                        error_codes_denominator=alpha_denominator_columns,
+                        ascending=False)
+                #df_per_column.dropna(inplace=True)
+                with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):                    
+                    outputfile.write(f"\n{df_per_column}\n")
+                    logger.info(f"{df_per_column}\n")
+                    html_data['PREDICTION_QUALITY_ALPHA_PER_PROBABILITY_TABLE'] = df_per_column.to_html()
+
+                # BETA errors 
+                message = f"Number of ERROR_BETA parcels per % probability for the ground truth parcels, without doubt based on probability:"
+                outputfile.write(f"\n{message}\n")            
+                html_data['PREDICTION_QUALITY_BETA_PER_PROBABILITY_TEXT'] = message
+
+                # Calc data and write
+                pred_quality_column = "gt_conclusion_" + "pred_cons_no_pct_prob"
+                df_per_column = _get_errors_per_column(
+                        groupbycolumn='pred1_prob_rounded',
+                        df_predquality=df_parcel_gt,
+                        pred_quality_column=pred_quality_column,
+                        pred_quality_full_doubt_column=pred_quality_full_doubt_column,
+                        error_codes_numerator=beta_numerator_columns,
+                        error_codes_denominator=beta_denominator_columns,
+                        ascending=False)
+                #df_per_column.dropna(inplace=True)
+                with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 2000):                    
+                    outputfile.write(f"\n{df_per_column}\n")
+                    logger.info(f"{df_per_column}\n")
+                    html_data['PREDICTION_QUALITY_BETA_PER_PROBABILITY_TABLE'] = df_per_column.to_html()
+
     with open(output_report_txt.replace('.txt', '.html'), 'w') as outputfile:           
         html_template_file = open('./cropclassification/postprocess/html_rapport_template.html').read()                        
         src = Template(html_template_file)
@@ -462,43 +707,212 @@ def _get_confusion_matrix_ext(df_predict, prediction_column_to_use: str):
 
     return df_confmatrix_ext
 
-def _get_alfa_errors_per_pixcount(df_predquality_pixcount):
-    """ Returns a dataset with detailed information about the number of alfa errors per pixcount """
+def _add_prediction_conclusion(in_df,
+                               new_columnname, 
+                               prediction_column_to_use,
+                               detailed: bool):
+    """
+    Calculate the "conclusions" for the predictions 
 
-    # Calculate the number of parcels per pixcount, the cumulative sum + the pct of all
-    df_count_per_pixcount = (df_predquality_pixcount.groupby(conf.columns['pixcount_s1s2'], as_index=False)
-                             .size().to_frame('count_all'))
-    values = df_count_per_pixcount['count_all'].cumsum(axis=0)
-    df_count_per_pixcount.insert(loc=len(df_count_per_pixcount.columns),
-                                 column='count_all_cumulative',
-                                 value=values)
-    values = (100 * df_count_per_pixcount['count_all_cumulative']
-              / df_count_per_pixcount['count_all'].sum())
-    df_count_per_pixcount.insert(loc=len(df_count_per_pixcount.columns),
-                                 column='pct_all_cumulative',
-                                 value=values)
+    REMARK: calculating it like this, using native pandas operations, is 300 times faster than
+            using DataFrame.apply() with a function!!!
+    """
+    # Get a lists of the classes to ignore
+    all_classes_to_ignore = (conf.marker.getlist('classes_to_ignore_for_train') 
+                             + conf.marker.getlist('classes_to_ignore'))
+    classes_to_ignore_unimportant = conf.marker.getlist('classes_to_ignore_unimportant') 
 
-    # Now calculate the number of alfa errors per pixcount
-    df_alfa_error = df_predquality_pixcount[df_predquality_pixcount[f"prediction_quality_{conf.columns['prediction_withdoubt']}"] == 'ERROR_ALFA']
-    df_alfa_per_pixcount = (df_alfa_error.groupby(conf.columns['pixcount_s1s2'], as_index=False)
-                            .size().to_frame('count_error_alfa'))
+    # Add the new column with a fixed value first 
+    in_df[new_columnname] = 'UNDEFINED'    
+    
+    # Some conclusions are different if detailed info is asked...
+    if detailed == True:
+        # The classes that are defined as unimportant
+        in_df.loc[(in_df[new_columnname] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_declared']].isin(classes_to_ignore_unimportant)),
+                  new_columnname] = 'IGNORE_UNIMPORTANT:INPUTCLASSNAME=' + in_df[conf.columns['class']].map(str)
+        # Parcels that were ignored for trainig and/or prediction, get an ignore conclusion
+        in_df.loc[(in_df[new_columnname] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_declared']].isin(all_classes_to_ignore)),
+                  new_columnname] = 'IGNORE:INPUTCLASSNAME=' + in_df[conf.columns['class']].map(str)
+        # If conclusion still UNDEFINED, check if doubt 
+        in_df.loc[(in_df[new_columnname] == 'UNDEFINED')
+                    & (in_df[prediction_column_to_use].str.startswith('DOUBT')),
+                  new_columnname] = 'DOUBT:REASON=' + in_df[prediction_column_to_use].map(str)
+        in_df.loc[(in_df[new_columnname] == 'UNDEFINED')
+                    & (in_df[prediction_column_to_use] == 'NODATA'),
+                  new_columnname] = 'DOUBT:REASON=' + in_df[prediction_column_to_use].map(str)
+    else:
+        # The classes that are defined as unimportant
+        in_df.loc[(in_df[new_columnname] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_declared']].isin(classes_to_ignore_unimportant)),
+                  new_columnname] = 'IGNORE_UNIMPORTANT'
+        # Parcels that were ignored for trainig and/or prediction, get an ignore conclusion
+        in_df.loc[(in_df[new_columnname] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_declared']].isin(all_classes_to_ignore)),
+                  new_columnname] = 'IGNORE'
+        # If conclusion still UNDEFINED, check if doubt 
+        in_df.loc[(in_df[new_columnname] == 'UNDEFINED')
+                    & (in_df[prediction_column_to_use].str.startswith('DOUBT')),
+                  new_columnname] = 'DOUBT'
+        in_df.loc[(in_df[new_columnname] == 'UNDEFINED')
+                    & (in_df[prediction_column_to_use] == 'NODATA'),
+                  new_columnname] = 'DOUBT'
 
-    # Join them together, and calculate the alfa error percentages
-    df_alfa_per_pixcount = df_count_per_pixcount.join(df_alfa_per_pixcount, how='left')
-    df_alfa_per_pixcount.insert(loc=len(df_alfa_per_pixcount.columns),
-                                column='count_error_alfa_cumulative',
-                                value=df_alfa_per_pixcount['count_error_alfa'].cumsum(axis=0))
+    # If conclusion still UNDEFINED, check if prediction equals the input class 
+    in_df.loc[(in_df[new_columnname] == 'UNDEFINED')
+                & (in_df[conf.columns['class_declared']] == in_df[prediction_column_to_use]),
+              new_columnname] = 'OK:PREDICTION=INPUT_CLASS'
+    # If conclusion still UNDEFINED, prediction is different from input 
+    in_df.loc[in_df[new_columnname] == 'UNDEFINED',
+              new_columnname] = 'NOK:PREDICTION<>INPUT_CLASS'
+
+def _add_gt_conclusions(in_df, 
+                        prediction_column_to_use) -> str:
+    """ Add some columns with groundtruth conclusions. """
+    
+    # Add the new column with a fixed value first
+    gt_vs_input_column = f"gt_vs_input_{prediction_column_to_use}"
+    gt_vs_prediction_column = f"gt_vs_prediction_{prediction_column_to_use}"
+    gt_conclusion_column = f"gt_conclusion_{prediction_column_to_use}"
+    all_classes_to_ignore = (conf.marker.getlist('classes_to_ignore_for_train') 
+                                + conf.marker.getlist('classes_to_ignore'))
+
+    # Calculate gt_vs_input_column
+    # If ground truth same as input class, farmer OK, unless it is an ignore class
+    in_df[gt_vs_input_column] = 'UNDEFINED'
+    in_df.loc[(in_df[gt_vs_input_column] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_declared']] == in_df[conf.columns['class_groundtruth']])
+                    & (in_df[conf.columns['class_groundtruth']].isin(all_classes_to_ignore)),
+              gt_vs_input_column] = 'FARMER-CORRECT:IGNORE:DECLARED=GROUNDTRUTH=' + in_df[conf.columns['class_groundtruth']].map(str)
+    in_df.loc[(in_df[gt_vs_input_column] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_declared']] == in_df[conf.columns['class_groundtruth']]),
+              gt_vs_input_column] = 'FARMER-CORRECT'
+    in_df.loc[(in_df[gt_vs_input_column] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_declared']].isin(all_classes_to_ignore)),
+              gt_vs_input_column] = 'FARMER-WRONG:IGNORE:DECLARED=' + in_df[conf.columns['class_declared']].map(str)
+    in_df.loc[(in_df[gt_vs_input_column] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_groundtruth']].isin(all_classes_to_ignore)),
+              gt_vs_input_column] = 'FARMER-WRONG:IGNORE:GROUNDTRUTH=' + in_df[conf.columns['class_groundtruth']].map(str)
+
+    # If conclusion still UNDEFINED, farmer was simply wrong 
+    in_df.loc[in_df[gt_vs_input_column] == 'UNDEFINED',
+              gt_vs_input_column] = 'FARMER-WRONG'
+
+    # Calculate gt_vs_prediction_column
+    # If ground truth same as prediction, prediction OK 
+    in_df[gt_vs_prediction_column] = 'UNDEFINED'
+    in_df.loc[(in_df[prediction_column_to_use] == in_df[conf.columns['class_groundtruth']]),
+              gt_vs_prediction_column] = 'PRED-CORRECT'
+    in_df.loc[(in_df[prediction_column_to_use] == in_df[conf.columns['class_groundtruth']])
+                    & (in_df[prediction_column_to_use].isin(all_classes_to_ignore)),
+              gt_vs_prediction_column] = 'PRED-CORRECT:IGNORE:PREDICTION=GROUNDTRUTH=' + in_df[prediction_column_to_use].map(str)                
+
+    # If declared class in ignored for trainig and/or prediction: an ignore conclusion
+    in_df.loc[(in_df[gt_vs_prediction_column] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_declared']].isin(all_classes_to_ignore)),
+              gt_vs_prediction_column] = 'PRED-WRONG:IGNORE:DECLARED=' + in_df[conf.columns['class_declared']].map(str)
+
+    # If conclusion still UNDEFINED, check if doubt 
+    in_df.loc[(in_df[gt_vs_prediction_column] == 'UNDEFINED')
+                    & (in_df[prediction_column_to_use].str.startswith('DOUBT')),
+              gt_vs_prediction_column] = 'PRED-DOUBT:REASON=' + in_df[prediction_column_to_use].map(str)
+    in_df.loc[(in_df[gt_vs_prediction_column] == 'UNDEFINED')
+                    & (in_df[prediction_column_to_use] == 'NODATA'),
+              gt_vs_prediction_column] = 'PRED-DOUBT:REASON=' + in_df[prediction_column_to_use].map(str)              
+
+    # If groundtruth class in ignored for trainig and/or prediction: an ignore conclusion
+    in_df.loc[(in_df[gt_vs_prediction_column] == 'UNDEFINED')
+                    & (in_df[conf.columns['class_groundtruth']].isin(all_classes_to_ignore)),
+              gt_vs_prediction_column] = 'PRED-WRONG:IGNORE:GROUNDTRUTH=' + in_df[conf.columns['class_groundtruth']].map(str)
+
+    # If conclusion still UNDEFINED, it was wrong 
+    in_df.loc[in_df[gt_vs_prediction_column] == 'UNDEFINED',
+              gt_vs_prediction_column] = 'PRED-WRONG'
+
+    # Calculate gt_conclusion_column
+    # Declared class was correct  
+    in_df[gt_conclusion_column] = 'UNDEFINED'
+    in_df.loc[(in_df[gt_vs_input_column] == 'FARMER-CORRECT')
+                    & (in_df[gt_vs_prediction_column] == 'PRED-WRONG'),
+              gt_conclusion_column] = 'FARMER-CORRECT_PRED-WRONG:ERROR_ALPHA'
+    in_df.loc[(in_df[gt_conclusion_column] == 'UNDEFINED')
+                    & (in_df[gt_vs_input_column] == 'FARMER-CORRECT'),
+                gt_conclusion_column] = 'FARMER-CORRECT_' + in_df[gt_vs_prediction_column].map(str)
+
+    # Declared class was not correct
+    in_df.loc[(in_df[gt_conclusion_column] == 'UNDEFINED')
+                    & (in_df[gt_vs_input_column] == 'FARMER-WRONG')
+                    & (in_df[conf.columns['class_declared']] == in_df[prediction_column_to_use]),
+              gt_conclusion_column] = 'FARMER-WRONG_PRED-DOESNT_OPPOSE:ERROR_BETA'
+    in_df.loc[(in_df[gt_conclusion_column] == 'UNDEFINED')
+                    & (in_df[gt_vs_input_column] == 'FARMER-WRONG'),
+              gt_conclusion_column] = 'FARMER-WRONG_' + in_df[gt_vs_prediction_column].map(str)
+    
+    # Declared or groundtruth class was ignore
+    in_df.loc[(in_df[gt_conclusion_column] == 'UNDEFINED'),
+              gt_conclusion_column] = in_df[gt_vs_input_column].map(str)
+         
+def _get_errors_per_column(
+            groupbycolumn: str,
+            df_predquality,
+            pred_quality_column: str,
+            pred_quality_full_doubt_column: str,
+            error_codes_numerator: [],
+            error_codes_denominator: [],
+            ascending: bool = True):
+    """ Returns a dataset with detailed information about the number of alfa errors per column that was passed on"""
+
+    # First filter on the parcels we need to calculate the pct alpha errors
+    df_predquality_filtered = df_predquality[
+            df_predquality[pred_quality_column].isin(error_codes_denominator)]
+
+    # Calculate the number of parcels per groupbycolumn, the cumulative sum + the pct of all
+    df_predquality_count = (df_predquality_filtered.groupby(groupbycolumn, as_index=False)
+                            .size().to_frame('count_all'))
+    df_predquality_count.sort_index(ascending=ascending, inplace=True)
+    values = df_predquality_count['count_all'].cumsum(axis=0)
+    df_predquality_count.insert(loc=len(df_predquality_count.columns),
+                                column='count_all_cumulative',
+                                value=values)
+    values = (100 * df_predquality_count['count_all_cumulative']
+              / df_predquality_count['count_all'].sum())
+    df_predquality_count.insert(loc=len(df_predquality_count.columns),
+                                column='pct_all_cumulative',
+                                value=values)
+
+    # Now calculate the number of alfa errors per groupbycolumn
+    df_alfa_error = df_predquality_filtered[
+            df_predquality_filtered[pred_quality_column].isin(error_codes_numerator)]
+    df_alfa_per_column = (df_alfa_error.groupby(groupbycolumn, as_index=False)
+                          .size().to_frame('count_error_alfa'))
+    df_alfa_per_column.sort_index(ascending=ascending, inplace=True)                         
+
+    # Now calculate the number of alfa errors with full doubt per groupbycolumn 
+    df_alfa_error_full_doubt = df_predquality_filtered[
+            df_predquality_filtered[pred_quality_full_doubt_column].isin(error_codes_numerator)]
+    df_alfa_full_doubt_per_column = (df_alfa_error_full_doubt.groupby(groupbycolumn, as_index=False)
+                                     .size().to_frame('count_error_alfa_full_doubt'))
+
+    # Join everything together
+    df_alfa_per_column = df_predquality_count.join(df_alfa_per_column, how='left')
+    df_alfa_per_column = df_alfa_per_column.join(df_alfa_full_doubt_per_column, how='left')
+
+    # Finally calculate all alfa error percentages
+    df_alfa_per_column.insert(loc=len(df_alfa_per_column.columns),
+                              column='count_error_alfa_cumulative',
+                              value=df_alfa_per_column['count_error_alfa'].cumsum(axis=0))
                                 
-    values = 100 * df_alfa_per_pixcount['count_error_alfa'] / df_alfa_per_pixcount['count_all']
-    df_alfa_per_pixcount.insert(loc=len(df_alfa_per_pixcount.columns), column='pct_error_alfa_of_all', value=values)
+    values = 100 * df_alfa_per_column['count_error_alfa'] / df_alfa_per_column['count_all']
+    df_alfa_per_column.insert(loc=len(df_alfa_per_column.columns), column='pct_error_alfa_of_all', value=values)
                                 
-    values = (100 * df_alfa_per_pixcount['count_error_alfa_cumulative'] / df_alfa_per_pixcount['count_error_alfa'].sum())
-    df_alfa_per_pixcount.insert(loc=len(df_alfa_per_pixcount.columns), column='pct_error_alfa_of_alfa_cumulative', value=values)
+    values = (100 * df_alfa_per_column['count_error_alfa_cumulative'] / df_alfa_per_column['count_error_alfa'].sum())
+    df_alfa_per_column.insert(loc=len(df_alfa_per_column.columns), column='pct_error_alfa_of_alfa_cumulative', value=values)
 
-    values = (100 * df_alfa_per_pixcount['count_error_alfa_cumulative'] / df_alfa_per_pixcount['count_all'].sum())
-    df_alfa_per_pixcount.insert(loc=len(df_alfa_per_pixcount.columns), column='pct_error_alfa_of_all_cumulative', value=values)
+    values = (100 * df_alfa_per_column['count_error_alfa_cumulative'] / df_alfa_per_column['count_all'].sum())
+    df_alfa_per_column.insert(loc=len(df_alfa_per_column.columns), column='pct_error_alfa_of_all_cumulative', value=values)
 
-    return df_alfa_per_pixcount
+    return df_alfa_per_column
 
 def _write_OA_per_pixcount(df_parcel_predictions: pd.DataFrame,
                            output_report_txt: str,
@@ -519,7 +933,7 @@ def _write_OA_per_pixcount(df_parcel_predictions: pd.DataFrame,
             if nb_predictions_pixcount == 0:
                 continue
 
-            overall_accuracy = 100.0*skmetrics.accuracy_score(df_result_cur_pixcount[conf.columns['class']], df_result_cur_pixcount[conf.columns['prediction']], normalize=True, sample_weight=None)
+            overall_accuracy = 100.0*skmetrics.accuracy_score(df_result_cur_pixcount[conf.columns['class']], df_result_cur_pixcount['pred1'], normalize=True, sample_weight=None)
             message = f"OA for pixcount {i:2}: {overall_accuracy:3.2f} %, with {nb_predictions_pixcount} elements ({100*(nb_predictions_pixcount/nb_predictions_total):.4f} % of {nb_predictions_total})"
             logger.info(message)
             outputfile.write(f"{message}\n")

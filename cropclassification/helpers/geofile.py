@@ -9,8 +9,9 @@ import fiona
 import geopandas as gpd
 
 def read_file(filepath: str,
-              layer: str = 'default',
-              columns: [] = None) -> gpd.GeoDataFrame:
+              layer: str = 'info',
+              columns: [] = None,
+              bbox = None) -> gpd.GeoDataFrame:
     """
     Reads a file to a pandas dataframe. The fileformat is detected based on the filepath extension.
 
@@ -20,25 +21,28 @@ def read_file(filepath: str,
 
     ext_lower = ext.lower()
     if ext_lower == '.shp':
-        return gpd.read_file(filepath)
+        return gpd.read_file(filepath, bbox=bbox)
     elif ext_lower == '.gpkg':
-        return gpd.read_file(filepath, layer=layer)
+        return gpd.read_file(filepath, layer=layer, bbox=bbox)
     else:
         raise Exception(f"Not implemented for extension {ext_lower}")
 
 def to_file(gdf: gpd.GeoDataFrame,
             filepath: str,
-            layer: str = 'default',
+            layer: str = 'info',
             index: bool = True):
     """
     Reads a pandas dataframe to file. The fileformat is detected based on the filepath extension.
 
-    # TODO: think about if possible/how to support  adding optional parameter and pass them to next function, example encoding, float_format,...
+    # TODO: think about if possible/how to support adding optional parameter and pass them to next 
+    # function, example encoding, float_format,...
     """
     _, ext = os.path.splitext(filepath)
 
     ext_lower = ext.lower()
     if ext_lower == '.shp':
+        if index is True:
+            gdf = gdf.reset_index(inplace=False)
         gdf.to_file(filepath)
     elif ext_lower == '.gpkg':
         gdf.to_file(filepath, layer=layer, driver="GPKG")

@@ -30,7 +30,9 @@ import googleapiclient
 
 # Import local stuff
 import cropclassification.preprocess.timeseries as ts
+import cropclassification.preprocess.timeseries_util as ts_util
 import cropclassification.helpers.config_helper as conf
+import cropclassification.helpers.geofile_util as geofile_util
 import cropclassification.helpers.pandas_helper as pdh
 
 #-------------------------------------------------------------
@@ -54,15 +56,33 @@ def calc_timeseries_data(input_parcel_filepath: str,
     """ Calculate timeseries data for the input parcels
 
     args
-    ------------
         data_to_get: an array with data you want to be calculated: check out the constants starting
                      with DATA_TO_GET... for the options.
     """
-    # Check some variables...
+    ##### Check and init some stuff #####
     if sensordata_to_get is None:
         raise Exception("sensordata_to_get cannot be None")
+    if not os.path.exists(dest_data_dir):
+        os.mkdir(dest_data_dir)
 
-    # Start calculation of the timeseries on gee
+    # To have a good precision, the vector input must be uploaded to gee in WGS84!
+    input_preprocessed_dir = conf.dirs('input_preprocessed_dir')
+    input_parcel_basename = os.path.basename(input_parcel_filepath)
+    input_parcel_basename_noext, _ = os.path.splitext(input_parcel_basename)
+    input_parcel_4326_filepath = os.path.join(
+            input_preprocessed_dir, f"{input_parcel_basename_noext}_4326.shp")
+
+    # If the WGS84 version doesn't exist yet, create it
+    if(not os.path.exists(input_parcel_4326_filepath)):
+        input_parcel_gdf = geofile_util.read_file(input_parcel_filepath)
+        target_epsg = 4326
+        logger.info(f"Reproject features from {input_parcel_gdf.crs} to epsg:{target_epsg}")
+        input_parcel_4326_gdf = input_parcel_gdf.to_crs(epsg=target_epsg)
+        logger.info(f"Write reprojected features to {input_parcel_4326_filepath}")
+        geofile_util.to_file(input_parcel_4326_gdf, input_parcel_4326_filepath)
+
+    ##### Start calculation of the timeseries on gee #####
+
     logger.info("Start create_sentinel_timeseries_info")
     # On windows machines there seems to be an issue with gee. The following error is very common,
     # probably because there are too many sockets created in a short time... and the cleanup
@@ -250,7 +270,7 @@ def clean_gee_downloaded_csv(csv_file: str,
     try:
         # Prepare output filename
         file_noext, _ = os.path.splitext(csv_file)
-        output_file = f"{file_noext}{conf.general['columndata_ext']}"
+        output_file = f"{file_noext}{conf.general['data_ext']}"
 
         # Check if output file exists already even though it is different from input file
         if output_file != csv_file and os.path.exists(output_file):
@@ -261,34 +281,33 @@ def clean_gee_downloaded_csv(csv_file: str,
             open(output_file, 'w').close()
         else:
             # Read the file
-            logger.debug(f"Read file and remove gee specifice columns from {csv_file}")
+            logger.info(f"Read file and remove gee specifice columns from {csv_file}")
 
             # Sample 100 rows of data to determine dtypes, so floats can be read as float32 instead of the 
             # default float64. Writing those to eg. parquet is a lot more efficiënt.
-            df_test = pd.read_csv(csv_file, nrows=100)
-            float_cols = [c for c in df_test if df_test[c].dtype == "float64"]
+            test_df = pd.read_csv(csv_file, nrows=100)
+            float_cols = [c for c in test_df if test_df[c].dtype == "float64"]
             float32_cols = {c: np.float32 for c in float_cols}
 
             # Now read entire file
-            df_in = pd.read_csv(csv_file, engine='c', dtype=float32_cols)
+            data_read_df = pd.read_csv(csv_file, engine='c', dtype=float32_cols)
             
             # Drop unnecessary gee specific columns...
-            for column in df_in.columns:
+            for column in data_read_df.columns:
                 if column in ['system:index', '.geo']:
-                    df_in.drop(column, axis=1, inplace=True)
+                    data_read_df.drop(column, axis=1, inplace=True)
                 elif column == 'count':
                     logger.info(f"Rename count column to {conf.columns['pixcount_s1s2']}")
-                    df_in.rename(columns={'count': conf.columns['pixcount_s1s2']}, inplace=True)
+                    data_read_df.rename(columns={'count': conf.columns['pixcount_s1s2']}, inplace=True)
 
             # Set the id column as index
-            #df_in.set_index('CODE_OBJ', inplace=True)
-            df_in.set_index(conf.columns['id'], inplace=True)
+            data_read_df.set_index(conf.columns['id'], inplace=True)
 
             # If there are data columns, write to output file
-            if len(df_in.columns) > 0:
+            if len(data_read_df.columns) > 0:
                 # Replace the original file by the cleaned one
                 logger.info(f"Write the file with the gee specific columns removed to a new file: {output_file}")
-                pdh.to_file(df_in, output_file, index=True)
+                pdh.to_file(data_read_df, output_file, index=True)
             else:
                 logger.warning(f"No data columns found in file {csv_file}, so return!!!")
                 return            
@@ -321,6 +340,11 @@ def calculate_sentinel_timeseries(input_parcel_filepath: str,
     dest_data_dir_todownload = os.path.join(dest_data_dir, 'TODOWNLOAD')
     if not os.path.exists(dest_data_dir_todownload):
         os.mkdir(dest_data_dir_todownload)
+
+    # Prepare filepath as it is available on gee
+    input_parcel_filename = os.path.basename(input_parcel_filepath)
+    input_parcel_filename_noext, _ = os.path.splitext(input_parcel_filename)
+    input_parcel_filepath_gee = f"{conf.dirs['gee']}{input_parcel_filename_noext}"
 
     # Initialize connection to server
     ee.Initialize()
@@ -355,15 +379,9 @@ def calculate_sentinel_timeseries(input_parcel_filepath: str,
 
     # First adapt start_date and end_date so they are mondays, so it becomes easier to reuse timeseries data
     logger.info('Adapt start_date and end_date so they are mondays')
-    def get_monday(date_str):
-        """ Get the first monday before the date provided. """
-        parseddate = datetime.strptime(date_str, '%Y-%m-%d')
-        year_week = parseddate.strftime('%Y_%W')
-        year_week_monday = datetime.strptime(year_week + '_1', '%Y_%W_%w')
-        return year_week_monday
 
-    start_date = get_monday(start_date_str)
-    end_date = get_monday(end_date_str)       # Remark: de end date is exclusive in gee filtering, so must be a monday as well...
+    start_date = ts_util.get_monday(start_date_str)
+    end_date = ts_util.get_monday(end_date_str)       # Remark: de end date is exclusive in gee filtering, so must be a monday as well...
     start_date_str = start_date.strftime('%Y-%m-%d')
     end_date_str = end_date.strftime('%Y-%m-%d')
 
@@ -373,9 +391,9 @@ def calculate_sentinel_timeseries(input_parcel_filepath: str,
 #    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
 
     # Prepare the input vector data we want to add timeseries info to...
-    input_parcels = ee.FeatureCollection(input_parcel_filepath)
+    input_parcels = ee.FeatureCollection(input_parcel_filepath_gee)
 
-    logging.info(f'Create sentinel timeseries from {start_date} till {end_date} for parcel in file {input_parcel_filepath}')
+    logging.info(f'Create sentinel timeseries from {start_date} till {end_date} for parcel in file {input_parcel_filepath_gee}')
 
     # Add some columns with feature info, to be able to eg. filter only polygons...
 #    def add_feature_info(feature):
