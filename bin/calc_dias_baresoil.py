@@ -11,6 +11,11 @@ import pandas as pd
 import sys
 [sys.path.append(i) for i in ['.', '..']]
 
+# TODO: on windows, the init of this doensn't seem to work properly... should be solved somewhere else?
+if os.name == 'nt':
+    os.environ["GDAL_DATA"] = r"C:\Tools\anaconda3\envs\orthoseg4\Library\share\gdal"
+    os.environ['PROJ_LIB'] = r"C:\Tools\anaconda3\envs\orthoseg4\Library\share\proj"
+    
 from cropclassification.preprocess import timeseries_util as ts_util
 from cropclassification.helpers import pandas_helper as pdh
 from cropclassification.helpers import config_helper as conf
