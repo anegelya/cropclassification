@@ -182,8 +182,6 @@ def add_doubt_column(pred_df: pd.DataFrame,
 
     # Calculate predictions with doubt column
     classes_to_ignore = conf.marker.getlist('classes_to_ignore')
-    
-    
 
     # Init with the standard prediction 
     pred_df[new_pred_column] = 'UNDEFINED'
@@ -315,8 +313,51 @@ def add_doubt_column(pred_df: pd.DataFrame,
                             & (pred_df['pred1'].isin(['MON_LC_BOS', 'MON_LC_HEIDE', 'MON_LC_OVERK_LOO'])),
                       new_pred_column] = 'DOUBT_RISK:DECL<>PRED-PRED=' + pred_df['pred1'].map(str)
 
+            # MarKet
+            # If parcel was declared as 9410 and classified as ARABLE, set to doubt
+            pred_df.loc[(pred_df[new_pred_column] == 'UNDEFINED')
+                            & (~pred_df[new_pred_column].str.startswith('DOUBT'))
+                            & (pred_df[conf.columns['crop_declared']].isin(['9410']))
+                            & (pred_df['pred1'] == 'MON_LC_ARABLE'),
+                        new_pred_column] = 'DOUBT:MARKET1' #iets beters verzinnen nog ?
+
+            # If parcel was declared as 9602 and classified as FRUIT, set to doubt
+            pred_df.loc[(pred_df[new_pred_column] == 'UNDEFINED')
+                            & (~pred_df[new_pred_column].str.startswith('DOUBT'))
+                            & (pred_df[conf.columns['crop_declared']].isin(['9602']))
+                            & (pred_df['pred1'] == 'MON_LC_FRUIT'),
+                        new_pred_column] = 'DOUBT:MARKET2' #iets beters verzinnen nog ?
+
+            # If parcel was declared as one of the following and classified as GRASSES, set to doubt_risk
+            pred_df.loc[(pred_df[new_pred_column] == 'UNDEFINED')
+                            & (~pred_df[new_pred_column].str.startswith('DOUBT'))
+                            & (pred_df[conf.columns['crop_declared']].isin(['36', '895', '9582']))
+                            & (pred_df['pred1'] == 'MON_LC_GRASSES'),
+                        new_pred_column] = 'DOUBT_RISK:MARKET3' #iets beters verzinnen nog ?
+
+            # If parcel was declared as one of the following and classified as ARABLE, set to doubt_risk
+            pred_df.loc[(pred_df[new_pred_column] == 'UNDEFINED')
+                            & (~pred_df[new_pred_column].str.startswith('DOUBT'))
+                            & (pred_df[conf.columns['crop_declared']].isin(['601', '644', '932', '9412', '9584']))
+                            & (pred_df['pred1'] == 'MON_LC_ARABLE'),
+                        new_pred_column] = 'DOUBT_RISK:MARKET4' #iets beters verzinnen nog ?
+
+            # If parcel was declared as one of the following and classified as FABACEAE, set to doubt_risk
+            pred_df.loc[(pred_df[new_pred_column] == 'UNDEFINED')
+                            & (~pred_df[new_pred_column].str.startswith('DOUBT'))
+                            & (pred_df[conf.columns['crop_declared']].isin(['9546']))
+                            & (pred_df['pred1'] == 'MON_LC_FABACEAE'),
+                        new_pred_column] = 'DOUBT_RISK:MARKET5' #iets beters verzinnen nog ?
+
         elif conf.marker['markertype'] in ('CROPGROUP', 'CROPGROUP_EARLY'):
             logger.info("Apply some marker-specific doubt algorythms")
+
+            # TODO verder afwerken
+            # Red parcels with MON_TRITICALE always seem to be predicted wrong
+            pred_df.loc[(pred_df[new_pred_column] == 'UNDEFINED')
+                            & (~pred_df[new_pred_column].str.startswith('DOUBT'))
+                            & (pred_df['pred1'] == 'MON_TRITICALE'),
+                        new_pred_column] = 'DOUBT_RISK:TRITICALE-DOUBT'
 
     # Accuracy with few pixels might be lower, so set those to doubt
     if apply_doubt_min_nb_pixels is True:
